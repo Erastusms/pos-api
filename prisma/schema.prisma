@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── User & Identity ─────────────────────────────────────────────────────────
+
+model User {
+  id        String    @id @default(cuid())
+  name      String
+  email     String    @unique
+  password  String
+  phone     String?
+  pin       String?   // 6-digit PIN for cashier quick-login
+  isActive  Boolean   @default(true)
+  roleId    Int
+  outletId  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  role          Role           @relation(fields: [roleId], references: [id])
+  outlet        Outlet?        @relation(fields: [outletId], references: [id])
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@index([email])
+  @@index([outletId])
+  @@index([roleId])
+  @@map("users")
+}
+
+// ─── Role & Permission (RBAC) ─────────────────────────────────────────────────
+
+/// User types: 1=SUPER_ADMIN, 2=OWNER, 3=MANAGER, 4=CASHIER
+model Role {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique // e.g. "SUPER_ADMIN"
+  displayName String  // e.g. "Super Admin"
+  description String?
+
+  users           User[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+/// Granular permissions per resource + action
+model Permission {
+  id          Int     @id @default(autoincrement())
+  resource    String  // e.g. "product", "transaction", "report"
+  action      String  // e.g. "create", "read", "update", "delete", "export", "void"
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@unique([resource, action])
+  @@map("permissions")
+}
+
+/// Junction table: which role has which permissions
+model RolePermission {
+  roleId       Int
+  permissionId Int
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ─── Outlet (Multi-branch) ────────────────────────────────────────────────────
+
+model Outlet {
+  id        String    @id @default(cuid())
+  name      String
+  address   String?
+  phone     String?
+  email     String?
+  taxNumber String?   // NPWP
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  users User[]
+
+  @@map("outlets")
+}
+
+// ─── Auth Tokens ──────────────────────────────────────────────────────────────
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  token      String   @unique
+  userId     String
+  deviceInfo String?  // e.g. "Mozilla/5.0 ..."
+  ipAddress  String?
+  expiresAt  DateTime
+  isRevoked  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ─── Audit Trail ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  // null if system action
+  action     String   // e.g. "CREATE", "UPDATE", "DELETE", "LOGIN", "LOGOUT"
+  resource   String   // e.g. "user", "product", "transaction"
+  resourceId String?  // ID of the affected record
+  oldData    Json?    // snapshot before change
+  newData    Json?    // snapshot after change
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
