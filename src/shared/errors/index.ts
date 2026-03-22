@@ -49,12 +49,20 @@ export function errorHandler(
 
   // ─── Fastify schema validation errors (query / body / params) ────────────
   if ('validation' in error && error.validation) {
-    const details = (error.validation as Array<{ instancePath: string; message?: string }>).map(
-      (v) => ({
-        field: v.instancePath ? v.instancePath.replace(/^\//, '') : 'unknown',
-        message: v.message ?? 'Invalid value',
-      }),
-    )
+    const details = (
+      error.validation as Array<{
+        instancePath: string
+        message?: string
+        params?: { missingProperty?: string }
+      }>
+    ).map((v) => ({
+      // required property error → pakai params.missingProperty
+      // type/format error      → pakai instancePath
+      field:
+        v.params?.missingProperty ??
+        (v.instancePath ? v.instancePath.replace(/^\//, '') : 'unknown'),
+      message: v.message ?? 'Invalid value',
+    }))
 
     reply.status(422).send({
       success: false,

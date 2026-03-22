@@ -1,11 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { authService } from './auth.service'
-import {
-  registerSchema,
-  loginSchema,
-  refreshTokenSchema,
-  logoutSchema,
-} from './auth.schema'
+import { registerSchema, loginSchema, refreshTokenSchema, logoutSchema } from './auth.schema'
 import { sendSuccess } from '../../shared/utils/response'
 import { ValidationError } from '../../shared/errors'
 import { UnauthorizedError } from '../../shared/errors'

@@ -25,7 +25,7 @@ export const registerSchema = z.object({
     .string()
     .regex(/^(\+62|62|0)8[1-9][0-9]{6,10}$/, 'Format nomor telepon tidak valid')
     .optional(),
-  outletId: z.string().cuid('Format outlet ID tidak valid').optional(),
+  outletId: z.string().min(1).optional(),
   roleId: z.number().int().min(1).max(4).default(4), // default: CASHIER
 })
 

@@ -19,13 +19,19 @@ const errorResponse = (description: string) => ({
   type: 'object',
   description,
   properties: {
-    success: { type: 'boolean', example: false },
+    success: { type: 'boolean' },
     error: {
       type: 'object',
       properties: {
         code: { type: 'string' },
         message: { type: 'string' },
-        details: { type: 'array', items: { type: 'object' } },
+        details: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: true,
+          },
+        },
       },
     },
   },
@@ -215,8 +221,7 @@ export async function authRoutes(app: FastifyInstance) {
       schema: {
         tags: ['Auth'],
         summary: 'Ubah password',
-        description:
-          'Mengubah password. Semua sesi aktif di perangkat lain akan dihapus otomatis.',
+        description: 'Mengubah password. Semua sesi aktif di perangkat lain akan dihapus otomatis.',
         security: [{ bearerAuth: [] }],
         body: {
           type: 'object',

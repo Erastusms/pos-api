@@ -25,6 +25,7 @@ export async function buildApp() {
       customOptions: {
         strict: 'log',
         keywords: ['example'],
+        allErrors: true,
       },
     },
   })
