@@ -15,18 +15,19 @@ model User {
   email     String    @unique
   password  String
   phone     String?
-  pin       String?   // 6-digit PIN for cashier quick-login
+  pin       String?
   isActive  Boolean   @default(true)
   roleId    Int
   outletId  String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // soft delete
+  deletedAt DateTime?
 
-  role          Role           @relation(fields: [roleId], references: [id])
-  outlet        Outlet?        @relation(fields: [outletId], references: [id])
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
+  role                 Role                  @relation(fields: [roleId], references: [id])
+  outlet               Outlet?               @relation(fields: [outletId], references: [id])
+  refreshTokens        RefreshToken[]
+  auditLogs            AuditLog[]
+  inventoryAdjustments InventoryAdjustment[]
 
   @@index([email])
   @@index([outletId])
@@ -36,11 +37,10 @@ model User {
 
 // ─── Role & Permission (RBAC) ─────────────────────────────────────────────────
 
-/// User types: 1=SUPER_ADMIN, 2=OWNER, 3=MANAGER, 4=CASHIER
 model Role {
   id          Int     @id @default(autoincrement())
-  name        String  @unique // e.g. "SUPER_ADMIN"
-  displayName String  // e.g. "Super Admin"
+  name        String  @unique
+  displayName String
   description String?
 
   users           User[]
@@ -49,11 +49,10 @@ model Role {
   @@map("roles")
 }
 
-/// Granular permissions per resource + action
 model Permission {
   id          Int     @id @default(autoincrement())
-  resource    String  // e.g. "product", "transaction", "report"
-  action      String  // e.g. "create", "read", "update", "delete", "export", "void"
+  resource    String
+  action      String
   description String?
 
   rolePermissions RolePermission[]
@@ -62,7 +61,6 @@ model Permission {
   @@map("permissions")
 }
 
-/// Junction table: which role has which permissions
 model RolePermission {
   roleId       Int
   permissionId Int
@@ -82,13 +80,16 @@ model Outlet {
   address   String?
   phone     String?
   email     String?
-  taxNumber String?   // NPWP
+  taxNumber String?
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // soft delete
+  deletedAt DateTime?
 
-  users User[]
+  users          User[]
+  categories     Category[]
+  products       Product[]
+  inventoryItems InventoryItem[]
 
   @@map("outlets")
 }
@@ -99,7 +100,7 @@ model RefreshToken {
   id         String   @id @default(cuid())
   token      String   @unique
   userId     String
-  deviceInfo String?  // e.g. "Mozilla/5.0 ..."
+  deviceInfo String?
   ipAddress  String?
   expiresAt  DateTime
   isRevoked  Boolean  @default(false)
@@ -117,12 +118,12 @@ model RefreshToken {
 
 model AuditLog {
   id         String   @id @default(cuid())
-  userId     String?  // null if system action
-  action     String   // e.g. "CREATE", "UPDATE", "DELETE", "LOGIN", "LOGOUT"
-  resource   String   // e.g. "user", "product", "transaction"
-  resourceId String?  // ID of the affected record
-  oldData    Json?    // snapshot before change
-  newData    Json?    // snapshot after change
+  userId     String?
+  action     String
+  resource   String
+  resourceId String?
+  oldData    Json?
+  newData    Json?
   ipAddress  String?
   userAgent  String?
   createdAt  DateTime @default(now())
@@ -133,4 +134,128 @@ model AuditLog {
   @@index([resource, resourceId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ─── Product Catalog ──────────────────────────────────────────────────────────
+
+/// outletId = null  -> kategori global (semua outlet)
+/// outletId = <id>  -> kategori khusus outlet tersebut
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String
+  description String?
+  imageUrl    String?
+  parentId    String?
+  outletId    String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  parent   Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryHierarchy")
+  outlet   Outlet?    @relation(fields: [outletId], references: [id])
+  products Product[]
+
+  @@unique([slug, outletId])
+  @@index([parentId])
+  @@index([outletId])
+  @@index([isActive])
+  @@map("categories")
+}
+
+/// Produk — minimal schema untuk mendukung inventory.
+/// Akan diperluas di phase berikutnya (harga, variant, foto, dll).
+model Product {
+  id          String    @id @default(cuid())
+  name        String
+  sku         String
+  description String?
+  categoryId  String?
+  outletId    String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  outlet        Outlet         @relation(fields: [outletId], references: [id])
+  inventoryItem InventoryItem?
+
+  @@unique([sku, outletId])
+  @@index([categoryId])
+  @@index([outletId])
+  @@map("products")
+}
+
+// ─── Inventory ────────────────────────────────────────────────────────────────
+
+enum AdjustmentType {
+  INITIAL
+  PURCHASE_IN
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  SALE_OUT
+  RETURN_IN
+  VOID
+}
+
+model InventoryItem {
+  id        String   @id @default(cuid())
+  productId String   @unique
+  outletId  String
+  quantity  Decimal  @default(0) @db.Decimal(10, 3)
+  unit      String   @default("pcs")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product     Product               @relation(fields: [productId], references: [id])
+  outlet      Outlet                @relation(fields: [outletId], references: [id])
+  adjustments InventoryAdjustment[]
+  costLayers  InventoryCostLayer[]
+
+  @@index([outletId])
+  @@map("inventory_items")
+}
+
+/// Immutable log semua pergerakan stok
+model InventoryAdjustment {
+  id              String         @id @default(cuid())
+  inventoryItemId String
+  type            AdjustmentType
+  quantity        Decimal        @db.Decimal(10, 3)
+  quantityBefore  Decimal        @db.Decimal(10, 3)
+  quantityAfter   Decimal        @db.Decimal(10, 3)
+  costPerUnit     Decimal?       @db.Decimal(15, 4)
+  totalCost       Decimal?       @db.Decimal(15, 4)
+  notes           String?
+  reference       String?
+  userId          String?
+  createdAt       DateTime       @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  user          User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([inventoryItemId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("inventory_adjustments")
+}
+
+/// FIFO cost layers — setiap stok masuk membuat 1 layer baru
+model InventoryCostLayer {
+  id              String   @id @default(cuid())
+  inventoryItemId String
+  quantityIn      Decimal  @db.Decimal(10, 3)
+  quantityLeft    Decimal  @db.Decimal(10, 3)
+  costPerUnit     Decimal  @db.Decimal(15, 4)
+  createdAt       DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([inventoryItemId, createdAt])
+  @@index([inventoryItemId, quantityLeft])
+  @@map("inventory_cost_layers")
 }

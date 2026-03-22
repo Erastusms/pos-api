@@ -7,6 +7,8 @@ import swaggerUi from '@fastify/swagger-ui'
 import { env } from './env'
 import { errorHandler } from '../shared/errors'
 import { authRoutes } from '../modules/auth/auth.routes'
+import { categoryRoutes } from '../modules/category/category.routes'
+import { inventoryRoutes } from '../modules/inventory/inventory.routes'
 
 export async function buildApp() {
   const app = Fastify({
@@ -19,7 +21,6 @@ export async function buildApp() {
                 : undefined,
           }
         : false,
-    // Trust the first proxy (important for getting real client IP)
     trustProxy: true,
     ajv: {
       customOptions: {
@@ -30,105 +31,68 @@ export async function buildApp() {
     },
   })
 
-  // ─── Security plugins ───────────────────────────────────────────────────────
-  await app.register(helmet, {
-    contentSecurityPolicy: false, // disabled for Swagger UI
-  })
+  // ── Security plugins ────────────────────────────────────────────────────────
+  await app.register(helmet, { contentSecurityPolicy: false })
 
   await app.register(cors, {
-    origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    origin:         env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
+    methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
+    credentials:    true,
   })
 
   await app.register(rateLimit, {
-    max: env.RATE_LIMIT_MAX,
+    max:        env.RATE_LIMIT_MAX,
     timeWindow: env.RATE_LIMIT_WINDOW_MS,
-    // Do NOT set errorResponseBuilder — let the global error handler format it
-    // so the response shape is consistent with all other errors
   })
 
-  // ─── API Documentation ──────────────────────────────────────────────────────
+  // ── API Documentation ────────────────────────────────────────────────────────
   await app.register(swagger, {
     openapi: {
       openapi: '3.0.0',
-      info: {
-        title: 'POS System API',
-        description: 'REST API untuk sistem Point of Sale',
-        version: '1.0.0',
-      },
-      servers: [
-        {
-          url: `http://localhost:${env.PORT}`,
-          description: 'Development server',
-        },
-      ],
+      info: { title: 'POS System API', description: 'REST API untuk sistem Point of Sale', version: '1.0.0' },
+      servers: [{ url: `http://localhost:${env.PORT}`, description: 'Development server' }],
       components: {
         securitySchemes: {
-          bearerAuth: {
-            type: 'http',
-            scheme: 'bearer',
-            bearerFormat: 'JWT',
-            description: 'Masukkan access token JWT',
-          },
+          bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
         },
       },
       tags: [
-        { name: 'Auth', description: 'Autentikasi & Otorisasi' },
-        { name: 'Health', description: 'Status server' },
+        { name: 'Health',    description: 'Status server' },
+        { name: 'Auth',      description: 'Autentikasi & Otorisasi' },
+        { name: 'Category',  description: 'Manajemen kategori produk' },
+        { name: 'Inventory', description: 'Manajemen stok & HPP (FIFO)' },
       ],
     },
   })
 
   await app.register(swaggerUi, {
     routePrefix: '/docs',
-    uiConfig: {
-      docExpansion: 'list',
-      deepLinking: true,
-    },
+    uiConfig: { docExpansion: 'list', deepLinking: true },
   })
 
-  // ─── Global error handler ───────────────────────────────────────────────────
+  // ── Global error handler ────────────────────────────────────────────────────
   app.setErrorHandler(errorHandler)
 
-  // ─── Routes ─────────────────────────────────────────────────────────────────
-  await app.register(authRoutes, { prefix: '/api/v1/auth' })
+  // ── Routes ──────────────────────────────────────────────────────────────────
+  await app.register(authRoutes,      { prefix: '/api/v1/auth'      })
+  await app.register(categoryRoutes,  { prefix: '/api/v1/categories' })
+  await app.register(inventoryRoutes, { prefix: '/api/v1/inventory'  })
 
-  // ─── Health check ────────────────────────────────────────────────────────────
-  app.get(
-    '/health',
-    {
-      schema: {
-        tags: ['Health'],
-        summary: 'Server health check',
-        response: {
-          200: {
-            type: 'object',
-            properties: {
-              status: { type: 'string' },
-              timestamp: { type: 'string' },
-              uptime: { type: 'number' },
-            },
-          },
-        },
-      },
+  // ── Health check ────────────────────────────────────────────────────────────
+  app.get('/health', {
+    schema: {
+      tags: ['Health'], summary: 'Server health check',
+      response: { 200: { type: 'object', properties: {
+        status: { type: 'string' }, timestamp: { type: 'string' }, uptime: { type: 'number' },
+      }}},
     },
-    async () => ({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-    }),
-  )
+  }, async () => ({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() }))
 
-  // 404 handler
-  app.setNotFoundHandler((_request, reply) => {
+  app.setNotFoundHandler((_req, reply) => {
     reply.status(404).send({
       success: false,
-      error: {
-        code: 'ROUTE_NOT_FOUND',
-        message: 'The requested endpoint does not exist',
-      },
+      error: { code: 'ROUTE_NOT_FOUND', message: 'The requested endpoint does not exist' },
     })
   })
 
