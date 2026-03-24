@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
-// ─── Roles ───────────────────────────────────────────────────────────────────
+// ─── Roles ────────────────────────────────────────────────────────────────────
 
 const ROLES = [
   { id: 1, name: 'SUPER_ADMIN', displayName: 'Super Admin', description: 'Akses penuh ke seluruh sistem' },
@@ -12,38 +12,28 @@ const ROLES = [
   { id: 4, name: 'CASHIER',     displayName: 'Kasir',       description: 'Staf kasir, hanya akses transaksi' },
 ]
 
-// ─── Permissions ─────────────────────────────────────────────────────────────
+// ─── Permissions ──────────────────────────────────────────────────────────────
 
 const PERMISSIONS = [
-  // User
-  { resource: 'user', action: 'create' }, { resource: 'user', action: 'read' },
-  { resource: 'user', action: 'update' }, { resource: 'user', action: 'delete' },
-  // Outlet
-  { resource: 'outlet', action: 'create' }, { resource: 'outlet', action: 'read' },
-  { resource: 'outlet', action: 'update' }, { resource: 'outlet', action: 'delete' },
-  // Category
-  { resource: 'category', action: 'create' }, { resource: 'category', action: 'read' },
-  { resource: 'category', action: 'update' }, { resource: 'category', action: 'delete' },
-  // Product
-  { resource: 'product', action: 'create' }, { resource: 'product', action: 'read' },
-  { resource: 'product', action: 'update' }, { resource: 'product', action: 'delete' },
-  // Inventory
-  { resource: 'inventory', action: 'create' }, { resource: 'inventory', action: 'read' },
-  { resource: 'inventory', action: 'update' },
-  // Transaction
-  { resource: 'transaction', action: 'create' }, { resource: 'transaction', action: 'read' },
-  { resource: 'transaction', action: 'void' },
-  // Customer
-  { resource: 'customer', action: 'create' }, { resource: 'customer', action: 'read' },
-  { resource: 'customer', action: 'update' }, { resource: 'customer', action: 'delete' },
-  // Employee
-  { resource: 'employee', action: 'create' }, { resource: 'employee', action: 'read' },
-  { resource: 'employee', action: 'update' }, { resource: 'employee', action: 'delete' },
-  // Discount
-  { resource: 'discount', action: 'create' }, { resource: 'discount', action: 'read' },
-  { resource: 'discount', action: 'update' }, { resource: 'discount', action: 'delete' },
-  // Report
-  { resource: 'report', action: 'read' }, { resource: 'report', action: 'export' },
+  { resource: 'user',        action: 'create' }, { resource: 'user',        action: 'read'   },
+  { resource: 'user',        action: 'update' }, { resource: 'user',        action: 'delete' },
+  { resource: 'outlet',      action: 'create' }, { resource: 'outlet',      action: 'read'   },
+  { resource: 'outlet',      action: 'update' }, { resource: 'outlet',      action: 'delete' },
+  { resource: 'category',    action: 'create' }, { resource: 'category',    action: 'read'   },
+  { resource: 'category',    action: 'update' }, { resource: 'category',    action: 'delete' },
+  { resource: 'product',     action: 'create' }, { resource: 'product',     action: 'read'   },
+  { resource: 'product',     action: 'update' }, { resource: 'product',     action: 'delete' },
+  { resource: 'inventory',   action: 'create' }, { resource: 'inventory',   action: 'read'   },
+  { resource: 'inventory',   action: 'update' },
+  { resource: 'transaction', action: 'create' }, { resource: 'transaction', action: 'read'   },
+  { resource: 'transaction', action: 'void'   },
+  { resource: 'customer',    action: 'create' }, { resource: 'customer',    action: 'read'   },
+  { resource: 'customer',    action: 'update' }, { resource: 'customer',    action: 'delete' },
+  { resource: 'employee',    action: 'create' }, { resource: 'employee',    action: 'read'   },
+  { resource: 'employee',    action: 'update' }, { resource: 'employee',    action: 'delete' },
+  { resource: 'discount',    action: 'create' }, { resource: 'discount',    action: 'read'   },
+  { resource: 'discount',    action: 'update' }, { resource: 'discount',    action: 'delete' },
+  { resource: 'report',      action: 'read'   }, { resource: 'report',      action: 'export' },
 ]
 
 type PermRef = { resource: string; action: string }
@@ -73,7 +63,7 @@ const ROLE_PERMISSIONS: Record<string, PermRef[]> = {
     { resource: 'product',     action: 'read'   },
     { resource: 'inventory',   action: 'read'   },
     { resource: 'transaction', action: 'create' }, { resource: 'transaction', action: 'read' },
-    { resource: 'customer',    action: 'create' }, { resource: 'customer',    action: 'read'  },
+    { resource: 'customer',    action: 'create' }, { resource: 'customer',    action: 'read' },
     { resource: 'discount',    action: 'read'   },
   ],
 }
@@ -101,9 +91,9 @@ async function main() {
       create: perm,
     })
   }
-  console.info(`✅ Permissions seeded: ${PERMISSIONS.length} permissions`)
+  console.info(`✅ Permissions seeded: ${PERMISSIONS.length}`)
 
-  // 3. Role → Permission mapping
+  // 3. Role → Permission
   const dbPerms = await prisma.permission.findMany()
   for (const [roleName, perms] of Object.entries(ROLE_PERMISSIONS)) {
     const role = await prisma.role.findUnique({ where: { name: roleName } })
@@ -123,7 +113,7 @@ async function main() {
   }
   console.info('✅ Role permissions seeded')
 
-  // 4. Default outlet
+  // 4. Outlet
   const outlet = await prisma.outlet.upsert({
     where: { id: 'default-outlet-001' },
     update: {},
@@ -138,7 +128,7 @@ async function main() {
   })
   console.info(`✅ Outlet: "${outlet.name}"`)
 
-  // 5. Users
+  // 5. Users (admin & owner)
   const adminPw = await bcrypt.hash('Admin@123', 12)
   const admin = await prisma.user.upsert({
     where: { email: 'admin@pos.com' },
@@ -151,158 +141,350 @@ async function main() {
     update: {},
     create: { name: 'Demo Owner', email: 'owner@pos.com', password: ownerPw, roleId: 2, outletId: outlet.id },
   })
-  console.info(`✅ Users seeded: admin@pos.com, owner@pos.com`)
+  console.info('✅ Users seeded: admin@pos.com, owner@pos.com')
 
-  // ─── Phase 2: Categories ──────────────────────────────────────────────────
+  // ── Phase 2: Categories ───────────────────────────────────────────────────
 
-  // Root categories (global — outletId null)
   const catMakanan = await prisma.category.upsert({
     where: { slug_outletId: { slug: 'makanan', outletId: outlet.id } },
     update: {},
-    create: {
-      name: 'Makanan', slug: 'makanan', description: 'Semua produk makanan',
-      outletId: outlet.id, sortOrder: 1,
-    },
+    create: { name: 'Makanan', slug: 'makanan', description: 'Semua produk makanan', outletId: outlet.id, sortOrder: 1 },
   })
   const catMinuman = await prisma.category.upsert({
     where: { slug_outletId: { slug: 'minuman', outletId: outlet.id } },
     update: {},
-    create: {
-      name: 'Minuman', slug: 'minuman', description: 'Semua produk minuman',
-      outletId: outlet.id, sortOrder: 2,
-    },
+    create: { name: 'Minuman', slug: 'minuman', description: 'Semua produk minuman', outletId: outlet.id, sortOrder: 2 },
   })
   const catSnack = await prisma.category.upsert({
     where: { slug_outletId: { slug: 'snack', outletId: outlet.id } },
     update: {},
-    create: {
-      name: 'Snack & Cemilan', slug: 'snack', description: 'Camilan dan makanan ringan',
-      outletId: outlet.id, sortOrder: 3,
-    },
+    create: { name: 'Snack & Cemilan', slug: 'snack', outletId: outlet.id, sortOrder: 3 },
   })
-
-  // Sub-categories (nested under Makanan)
   const catNasiMie = await prisma.category.upsert({
     where: { slug_outletId: { slug: 'nasi-mie', outletId: outlet.id } },
     update: {},
-    create: {
-      name: 'Nasi & Mie', slug: 'nasi-mie', parentId: catMakanan.id,
-      outletId: outlet.id, sortOrder: 1,
-    },
+    create: { name: 'Nasi & Mie', slug: 'nasi-mie', parentId: catMakanan.id, outletId: outlet.id, sortOrder: 1 },
   })
   const catRoti = await prisma.category.upsert({
     where: { slug_outletId: { slug: 'roti-kue', outletId: outlet.id } },
     update: {},
-    create: {
-      name: 'Roti & Kue', slug: 'roti-kue', parentId: catMakanan.id,
-      outletId: outlet.id, sortOrder: 2,
-    },
+    create: { name: 'Roti & Kue', slug: 'roti-kue', parentId: catMakanan.id, outletId: outlet.id, sortOrder: 2 },
   })
-
-  // Sub-categories (nested under Minuman)
   const catKopi = await prisma.category.upsert({
     where: { slug_outletId: { slug: 'kopi', outletId: outlet.id } },
     update: {},
-    create: {
-      name: 'Kopi', slug: 'kopi', parentId: catMinuman.id,
-      outletId: outlet.id, sortOrder: 1,
-    },
+    create: { name: 'Kopi', slug: 'kopi', parentId: catMinuman.id, outletId: outlet.id, sortOrder: 1 },
   })
   const catJus = await prisma.category.upsert({
     where: { slug_outletId: { slug: 'jus-minuman-segar', outletId: outlet.id } },
     update: {},
+    create: { name: 'Jus & Minuman Segar', slug: 'jus-minuman-segar', parentId: catMinuman.id, outletId: outlet.id, sortOrder: 2 },
+  })
+  console.info('✅ Categories seeded: 7 kategori (3 root + 4 sub)')
+
+  // ── Phase 2: Products ─────────────────────────────────────────────────────
+
+  // 1. Nasi Goreng Spesial (SINGLE)
+  const prodNasiGoreng = await prisma.product.upsert({
+    where: { sku_outletId: { sku: 'MKN-001', outletId: outlet.id } },
+    update: {},
     create: {
-      name: 'Jus & Minuman Segar', slug: 'jus-minuman-segar', parentId: catMinuman.id,
-      outletId: outlet.id, sortOrder: 2,
+      name: 'Nasi Goreng Spesial', sku: 'MKN-001', type: 'SINGLE',
+      price: 35000, cost: 15000, categoryId: catNasiMie.id, outletId: outlet.id,
+      description: 'Nasi goreng dengan telur dan ayam suwir',
     },
   })
-  console.info(`✅ Categories seeded: Makanan, Minuman, Snack (+ 4 sub-kategori)`)
 
-  // ─── Phase 2: Sample Products ─────────────────────────────────────────────
+  // 2. Mie Ayam Bakso (SINGLE)
+  await prisma.product.upsert({
+    where: { sku_outletId: { sku: 'MKN-002', outletId: outlet.id } },
+    update: {},
+    create: {
+      name: 'Mie Ayam Bakso', sku: 'MKN-002', type: 'SINGLE',
+      price: 28000, cost: 12000, categoryId: catNasiMie.id, outletId: outlet.id,
+    },
+  })
 
-  const productsData = [
-    { name: 'Nasi Goreng Spesial', sku: 'MKN-001', categoryId: catNasiMie.id },
-    { name: 'Mie Ayam Bakso',      sku: 'MKN-002', categoryId: catNasiMie.id },
-    { name: 'Roti Bakar Coklat',   sku: 'MKN-003', categoryId: catRoti.id    },
-    { name: 'Es Kopi Susu',        sku: 'MNM-001', categoryId: catKopi.id    },
-    { name: 'Americano',           sku: 'MNM-002', categoryId: catKopi.id    },
-    { name: 'Jus Alpukat',         sku: 'MNM-003', categoryId: catJus.id     },
-    { name: 'Keripik Kentang',     sku: 'SNK-001', categoryId: catSnack.id   },
+  // 3. Roti Bakar (VARIANT — plain/coklat/keju)
+  const prodRoti = await prisma.product.upsert({
+    where: { sku_outletId: { sku: 'MKN-003', outletId: outlet.id } },
+    update: {},
+    create: {
+      name: 'Roti Bakar', sku: 'MKN-003', type: 'VARIANT',
+      price: 15000, cost: 7000, categoryId: catRoti.id, outletId: outlet.id,
+      description: 'Roti bakar dengan berbagai pilihan topping',
+    },
+  })
+
+  // Variants for Roti Bakar
+  const rotiVariants = [
+    { name: 'Plain', sku: 'MKN-003-PLN', price: 15000, cost: 7000, sortOrder: 0 },
+    { name: 'Coklat', sku: 'MKN-003-COK', price: 18000, cost: 8000, sortOrder: 1 },
+    { name: 'Keju', sku: 'MKN-003-KEJ', price: 20000, cost: 9000, sortOrder: 2 },
+    { name: 'Coklat Keju', sku: 'MKN-003-COK-KEJ', price: 22000, cost: 10000, sortOrder: 3 },
   ]
-
-  const createdProducts: Record<string, string> = {}
-  for (const p of productsData) {
-    const product = await prisma.product.upsert({
-      where: { sku_outletId: { sku: p.sku, outletId: outlet.id } },
+  for (const v of rotiVariants) {
+    await prisma.productVariant.upsert({
+      where: { sku_productId: { sku: v.sku, productId: prodRoti.id } },
       update: {},
-      create: { ...p, outletId: outlet.id, isActive: true },
+      create: { ...v, productId: prodRoti.id, attributes: { topping: v.name } },
     })
-    createdProducts[p.sku] = product.id
   }
-  console.info(`✅ Products seeded: ${productsData.length} produk`)
 
-  // ─── Phase 2: Initial Inventory ──────────────────────────────────────────
+  // 4. Es Kopi Susu (VARIANT — ukuran)
+  const prodKopi = await prisma.product.upsert({
+    where: { sku_outletId: { sku: 'MNM-001', outletId: outlet.id } },
+    update: {},
+    create: {
+      name: 'Es Kopi Susu', sku: 'MNM-001', type: 'VARIANT',
+      price: 25000, cost: 8000, categoryId: catKopi.id, outletId: outlet.id,
+      description: 'Espresso blend dengan susu segar dan es batu',
+    },
+  })
 
-  // Initial stock data: [sku, quantity, costPerUnit, unit]
-  const initialStocks: Array<[string, number, number, string]> = [
-    ['MKN-001', 100, 15000,  'porsi'],
-    ['MKN-002', 80,  12000,  'porsi'],
-    ['MKN-003', 50,  8000,   'buah' ],
-    ['MNM-001', 200, 5000,   'gelas'],
-    ['MNM-002', 150, 4000,   'gelas'],
-    ['MNM-003', 120, 6000,   'gelas'],
-    ['SNK-001', 300, 3500,   'bungkus'],
+  // Variants for Es Kopi Susu
+  const kopiVariants = [
+    { name: 'Regular (250ml)', sku: 'MNM-001-REG', price: 25000, cost: 8000,  sortOrder: 0 },
+    { name: 'Large (400ml)',   sku: 'MNM-001-LRG', price: 32000, cost: 11000, sortOrder: 1 },
   ]
+  for (const v of kopiVariants) {
+    await prisma.productVariant.upsert({
+      where: { sku_productId: { sku: v.sku, productId: prodKopi.id } },
+      update: {},
+      create: { ...v, productId: prodKopi.id, attributes: { ukuran: v.name.split(' ')[0]! } },
+    })
+  }
 
-  for (const [sku, qty, cost, unit] of initialStocks) {
-    const productId = createdProducts[sku]
-    if (!productId) continue
+  // Modifier: Level Gula untuk Es Kopi Susu
+  const modGroupGula = await prisma.productModifierGroup.upsert({
+    where: { id: 'seed-modgroup-gula' },
+    update: {},
+    create: {
+      id: 'seed-modgroup-gula',
+      productId: prodKopi.id,
+      name: 'Level Gula', isRequired: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
+    },
+  })
+  const gulaOptions = ['25%', '50%', 'Normal (75%)', 'Extra (100%)']
+  for (let i = 0; i < gulaOptions.length; i++) {
+    await prisma.productModifier.upsert({
+      where: { id: `seed-mod-gula-${i}` },
+      update: {},
+      create: { id: `seed-mod-gula-${i}`, modifierGroupId: modGroupGula.id, name: gulaOptions[i]!, price: 0, sortOrder: i },
+    })
+  }
 
-    // Buat InventoryItem jika belum ada
+  // Modifier: Suhu untuk Es Kopi Susu
+  const modGroupSuhu = await prisma.productModifierGroup.upsert({
+    where: { id: 'seed-modgroup-suhu' },
+    update: {},
+    create: {
+      id: 'seed-modgroup-suhu',
+      productId: prodKopi.id,
+      name: 'Suhu', isRequired: true, minSelect: 1, maxSelect: 1, sortOrder: 1,
+    },
+  })
+  for (const [i, opt] of [['Es', 0], ['Panas', 0]].entries()) {
+    await prisma.productModifier.upsert({
+      where: { id: `seed-mod-suhu-${i}` },
+      update: {},
+      create: { id: `seed-mod-suhu-${i}`, modifierGroupId: modGroupSuhu.id, name: String(opt), price: 0, sortOrder: i },
+    })
+  }
+
+  // 5. Americano (SINGLE + modifier)
+  const prodAmericano = await prisma.product.upsert({
+    where: { sku_outletId: { sku: 'MNM-002', outletId: outlet.id } },
+    update: {},
+    create: {
+      name: 'Americano', sku: 'MNM-002', type: 'SINGLE',
+      price: 22000, cost: 6000, categoryId: catKopi.id, outletId: outlet.id,
+    },
+  })
+  // Americano juga punya modifier suhu
+  const modGroupAmericanoSuhu = await prisma.productModifierGroup.upsert({
+    where: { id: 'seed-modgroup-americano-suhu' },
+    update: {},
+    create: {
+      id: 'seed-modgroup-americano-suhu',
+      productId: prodAmericano.id,
+      name: 'Suhu', isRequired: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
+    },
+  })
+  for (const [i, name] of ['Es', 'Panas'].entries()) {
+    await prisma.productModifier.upsert({
+      where: { id: `seed-mod-americano-suhu-${i}` },
+      update: {},
+      create: { id: `seed-mod-americano-suhu-${i}`, modifierGroupId: modGroupAmericanoSuhu.id, name, price: 0, sortOrder: i },
+    })
+  }
+
+  // 6. Jus Alpukat (SINGLE)
+  await prisma.product.upsert({
+    where: { sku_outletId: { sku: 'MNM-003', outletId: outlet.id } },
+    update: {},
+    create: {
+      name: 'Jus Alpukat', sku: 'MNM-003', type: 'SINGLE',
+      price: 20000, cost: 7000, categoryId: catJus.id, outletId: outlet.id,
+    },
+  })
+
+  // 7. Keripik Kentang (SINGLE)
+  await prisma.product.upsert({
+    where: { sku_outletId: { sku: 'SNK-001', outletId: outlet.id } },
+    update: {},
+    create: {
+      name: 'Keripik Kentang', sku: 'SNK-001', type: 'SINGLE',
+      price: 12000, cost: 4500, categoryId: catSnack.id, outletId: outlet.id,
+    },
+  })
+
+  console.info('✅ Products seeded: 7 produk (2 VARIANT dengan variants & modifier, 5 SINGLE)')
+
+  // ── Phase 2: Inventory ────────────────────────────────────────────────────
+
+  const products = await prisma.product.findMany({
+    where: { outletId: outlet.id, deletedAt: null },
+    select: { id: true, sku: true },
+  })
+
+  const stockData: Record<string, { qty: number; cost: number; unit: string }> = {
+    'MKN-001': { qty: 100, cost: 15000,  unit: 'porsi'   },
+    'MKN-002': { qty: 80,  cost: 12000,  unit: 'porsi'   },
+    'MKN-003': { qty: 50,  cost: 7000,   unit: 'buah'    },
+    'MNM-001': { qty: 200, cost: 8000,   unit: 'gelas'   },
+    'MNM-002': { qty: 150, cost: 6000,   unit: 'gelas'   },
+    'MNM-003': { qty: 120, cost: 7000,   unit: 'gelas'   },
+    'SNK-001': { qty: 300, cost: 4500,   unit: 'bungkus' },
+  }
+
+  for (const product of products) {
+    const s = stockData[product.sku]
+    if (!s) continue
+
     const item = await prisma.inventoryItem.upsert({
-      where: { productId },
-      update: { quantity: qty, unit },
-      create: { productId, outletId: outlet.id, quantity: qty, unit },
+      where: { productId: product.id },
+      update: { quantity: s.qty, unit: s.unit },
+      create: { productId: product.id, outletId: outlet.id, quantity: s.qty, unit: s.unit },
     })
 
-    // Buat cost layer awal
     await prisma.inventoryCostLayer.upsert({
-      where: { id: `seed-layer-${sku}` },
+      where: { id: `seed-layer-${product.sku}` },
       update: {},
       create: {
-        id: `seed-layer-${sku}`,
+        id: `seed-layer-${product.sku}`,
         inventoryItemId: item.id,
-        quantityIn: qty,
-        quantityLeft: qty,
-        costPerUnit: cost,
+        quantityIn: s.qty, quantityLeft: s.qty, costPerUnit: s.cost,
       },
     })
 
-    // Catat adjustment INITIAL
     await prisma.inventoryAdjustment.upsert({
-      where: { id: `seed-adj-${sku}` },
+      where: { id: `seed-adj-${product.sku}` },
       update: {},
       create: {
-        id: `seed-adj-${sku}`,
-        inventoryItemId: item.id,
-        type: 'INITIAL',
-        quantity: qty,
-        quantityBefore: 0,
-        quantityAfter: qty,
-        costPerUnit: cost,
-        totalCost: qty * cost,
-        notes: 'Stok awal dari seed',
-        userId: admin.id,
+        id: `seed-adj-${product.sku}`,
+        inventoryItemId: item.id, type: 'INITIAL',
+        quantity: s.qty, quantityBefore: 0, quantityAfter: s.qty,
+        costPerUnit: s.cost, totalCost: s.qty * s.cost,
+        notes: 'Stok awal dari seed', userId: admin.id,
       },
     })
   }
-  console.info(`✅ Inventory seeded: ${initialStocks.length} produk dengan stok awal`)
+  console.info(`✅ Inventory seeded: ${Object.keys(stockData).length} produk dengan stok awal`)
+
+  // ── Phase 2: Employees ────────────────────────────────────────────────────
+
+  const employees = [
+    {
+      id:    'seed-emp-001',
+      name:  'Siti Rahayu', position: 'Manager', employmentStatus: 'ACTIVE' as const,
+      hireDate: new Date('2023-01-15'), salary: 6500000,
+      email: 'siti@pos.com', phone: '081111111111',
+    },
+    {
+      id:    'seed-emp-002',
+      name:  'Budi Santoso', position: 'Kasir', employmentStatus: 'ACTIVE' as const,
+      hireDate: new Date('2023-03-01'), salary: 4000000,
+      email: 'budi@pos.com', phone: '082222222222',
+    },
+    {
+      id:    'seed-emp-003',
+      name:  'Dewi Lestari', position: 'Kasir', employmentStatus: 'ACTIVE' as const,
+      hireDate: new Date('2023-06-15'), salary: 4000000,
+      phone: '083333333333',
+    },
+    {
+      id:    'seed-emp-004',
+      name:  'Agus Priyanto', position: 'Barista', employmentStatus: 'ACTIVE' as const,
+      hireDate: new Date('2024-01-02'), salary: 4500000,
+      phone: '084444444444',
+    },
+    {
+      id:    'seed-emp-005',
+      name:  'Rina Kusuma', position: 'Kasir', employmentStatus: 'INACTIVE' as const,
+      hireDate: new Date('2022-08-01'), salary: 4000000,
+      notes: 'Cuti panjang',
+    },
+  ]
+
+  for (const emp of employees) {
+    await prisma.employee.upsert({
+      where: { id: emp.id },
+      update: {},
+      create: { ...emp, outletId: outlet.id },
+    })
+  }
+
+  // Set PIN untuk Budi dan Dewi (kasir aktif)
+  const hashedPin = await bcrypt.hash('123456', 12)
+  await prisma.employee.updateMany({
+    where: { id: { in: ['seed-emp-002', 'seed-emp-003'] } },
+    data: { pin: hashedPin },
+  })
+
+  // Contoh jadwal shift bulan ini
+  const today = new Date()
+  const thisMonth = today.getMonth()
+  const thisYear = today.getFullYear()
+
+  const shifts = [
+    // Budi: shift pagi (Senin-Jumat minggu ini)
+    { employeeId: 'seed-emp-002', day: 1,  startTime: '08:00', endTime: '16:00', type: 'MORNING'   as const },
+    { employeeId: 'seed-emp-002', day: 2,  startTime: '08:00', endTime: '16:00', type: 'MORNING'   as const },
+    { employeeId: 'seed-emp-002', day: 3,  startTime: '08:00', endTime: '16:00', type: 'MORNING'   as const },
+    // Dewi: shift siang
+    { employeeId: 'seed-emp-003', day: 1,  startTime: '14:00', endTime: '22:00', type: 'AFTERNOON' as const },
+    { employeeId: 'seed-emp-003', day: 2,  startTime: '14:00', endTime: '22:00', type: 'AFTERNOON' as const },
+    { employeeId: 'seed-emp-003', day: 3,  startTime: '14:00', endTime: '22:00', type: 'AFTERNOON' as const },
+    // Agus: shift penuh
+    { employeeId: 'seed-emp-004', day: 5,  startTime: '09:00', endTime: '17:00', type: 'FULL_DAY'  as const },
+    { employeeId: 'seed-emp-004', day: 6,  startTime: '09:00', endTime: '17:00', type: 'FULL_DAY'  as const },
+  ]
+
+  for (const s of shifts) {
+    const date = new Date(thisYear, thisMonth, s.day)
+    // Skip jika tanggal sudah lewat atau invalid
+    if (date.getMonth() !== thisMonth) continue
+
+    await prisma.shift.upsert({
+      where: { employeeId_date: { employeeId: s.employeeId, date } },
+      update: {},
+      create: {
+        employeeId: s.employeeId,
+        date, startTime: s.startTime, endTime: s.endTime, type: s.type,
+      },
+    })
+  }
+
+  console.info(`✅ Employees seeded: ${employees.length} karyawan (2 dengan PIN: 123456)`)
 
   console.info('\n🎉 Seed completed!\n')
-  console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-  console.info('  Super Admin : admin@pos.com  / Admin@123')
-  console.info('  Owner       : owner@pos.com  / Owner@123')
-  console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+  console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+  console.info('  Login:')
+  console.info('    Super Admin : admin@pos.com  / Admin@123')
+  console.info('    Owner       : owner@pos.com  / Owner@123')
+  console.info('  Employee PIN (Budi & Dewi): 123456')
+  console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
 }
 
 main()
