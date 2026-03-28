@@ -91,6 +91,10 @@ model Outlet {
   products       Product[]
   inventoryItems InventoryItem[]
   employees      Employee[]
+  settings       OutletSettings?
+  businessHours  OutletBusinessHour[]
+  suppliers      Supplier[]
+  purchaseOrders PurchaseOrder[]
 
   @@map("outlets")
 }
@@ -230,26 +234,28 @@ enum ProductType {
 }
 
 model Product {
-  id             String                 @id @default(cuid())
-  outletId       String
-  categoryId     String?
-  name           String
-  description    String?
-  sku            String
-  barcode        String?
-  price          Decimal                @default(0) @db.Decimal(15, 2)
-  cost           Decimal                @default(0) @db.Decimal(15, 2)
-  type           ProductType            @default(SINGLE)
-  isActive       Boolean                @default(true)
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  deletedAt      DateTime?
-  category       Category?              @relation(fields: [categoryId], references: [id])
-  outlet         Outlet                 @relation(fields: [outletId], references: [id])
+  id          String      @id @default(cuid())
+  outletId    String
+  categoryId  String?
+  name        String
+  description String?
+  sku         String
+  barcode     String?
+  price       Decimal     @default(0) @db.Decimal(15, 2)
+  cost        Decimal     @default(0) @db.Decimal(15, 2)
+  type        ProductType @default(SINGLE)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  category       Category?             @relation(fields: [categoryId], references: [id])
+  outlet         Outlet                @relation(fields: [outletId], references: [id])
   variants       ProductVariant[]
   modifierGroups ProductModifierGroup[]
   images         ProductImage[]
-  inventoryItem  InventoryItem?
+  inventoryItem       InventoryItem?
+  purchaseOrderItems  PurchaseOrderItem[]
 
   @@unique([sku, outletId])
   @@index([categoryId])
@@ -364,7 +370,6 @@ model InventoryItem {
   @@map("inventory_items")
 }
 
-/// Immutable log semua pergerakan stok
 model InventoryAdjustment {
   id              String         @id @default(cuid())
   inventoryItemId String
@@ -388,7 +393,6 @@ model InventoryAdjustment {
   @@map("inventory_adjustments")
 }
 
-/// FIFO cost layers — setiap stok masuk membuat 1 layer baru
 model InventoryCostLayer {
   id              String   @id @default(cuid())
   inventoryItemId String
@@ -402,4 +406,133 @@ model InventoryCostLayer {
   @@index([inventoryItemId, createdAt])
   @@index([inventoryItemId, quantityLeft])
   @@map("inventory_cost_layers")
+}
+
+// ─── Outlet Settings & Business Hours ────────────────────────────────────────
+
+/// Settings operasional outlet — disimpan sebagai satu row per outlet.
+/// Menggunakan pendekatan row per outlet (bukan JSON column) agar bisa di-index
+/// dan di-validate di level DB.
+model OutletSettings {
+  id              String  @id @default(cuid())
+  outletId        String  @unique
+  /// PPN dalam persen, e.g. 11.00 untuk 11%
+  taxRate         Decimal @default(0)   @db.Decimal(5, 2)
+  taxName         String  @default("PPN")
+  /// Service charge dalam persen
+  serviceCharge   Decimal @default(0)   @db.Decimal(5, 2)
+  /// Pembulatan harga: NONE | UP | DOWN | NEAREST
+  rounding        String  @default("NONE")
+  /// Nilai pembulatan, e.g. 100, 500, 1000
+  roundingValue   Int     @default(0)
+  /// Footer struk / receipt
+  receiptFooter   String?
+  /// URL logo untuk struk
+  receiptLogoUrl  String?
+  /// Mata uang, e.g. "IDR"
+  currency        String  @default("IDR")
+  /// Timezone, e.g. "Asia/Jakarta"
+  timezone        String  @default("Asia/Jakarta")
+  updatedAt       DateTime @updatedAt
+
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@map("outlet_settings")
+}
+
+/// Jam operasional per hari per outlet
+model OutletBusinessHour {
+  id        String   @id @default(cuid())
+  outletId  String
+  /// 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
+  dayOfWeek Int
+  isOpen    Boolean  @default(true)
+  openTime  String   @default("08:00")   /// "HH:MM"
+  closeTime String   @default("22:00")   /// "HH:MM"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@unique([outletId, dayOfWeek])
+  @@index([outletId])
+  @@map("outlet_business_hours")
+}
+
+// ─── Supplier & Purchase Order ────────────────────────────────────────────────
+
+model Supplier {
+  id          String    @id @default(cuid())
+  outletId    String
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  outlet         Outlet          @relation(fields: [outletId], references: [id])
+  purchaseOrders PurchaseOrder[]
+
+  @@index([outletId])
+  @@index([isActive])
+  @@map("suppliers")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT      /// Baru dibuat, belum dikirim ke supplier
+  ORDERED    /// Sudah dipesan / dikirim ke supplier
+  PARTIAL    /// Sebagian barang sudah diterima
+  RECEIVED   /// Semua barang sudah diterima
+  CANCELLED  /// Dibatalkan
+}
+
+model PurchaseOrder {
+  id            String              @id @default(cuid())
+  outletId      String
+  supplierId    String
+  orderNumber   String              /// Auto-generated: PO-YYYYMMDD-XXXX
+  status        PurchaseOrderStatus @default(DRAFT)
+  notes         String?
+  orderedAt     DateTime?           /// Tanggal PO dikirim ke supplier
+  expectedAt    DateTime?           /// Estimasi tanggal terima
+  receivedAt    DateTime?           /// Tanggal semua item diterima
+  totalAmount   Decimal             @default(0) @db.Decimal(15, 2)
+  createdById   String?             /// userId yang membuat
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  outlet    Outlet              @relation(fields: [outletId], references: [id])
+  supplier  Supplier            @relation(fields: [supplierId], references: [id])
+  items     PurchaseOrderItem[]
+
+  @@unique([orderNumber, outletId])
+  @@index([outletId])
+  @@index([supplierId])
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String  @id @default(cuid())
+  purchaseOrderId  String
+  productId        String
+  /// Jumlah yang dipesan
+  quantity         Decimal @db.Decimal(10, 3)
+  unit             String  @default("pcs")
+  costPerUnit      Decimal @db.Decimal(15, 4)
+  totalCost        Decimal @db.Decimal(15, 2)
+  /// Jumlah yang sudah diterima (untuk partial receive)
+  receivedQuantity Decimal @default(0) @db.Decimal(10, 3)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("purchase_order_items")
 }

@@ -34,6 +34,8 @@ const PERMISSIONS = [
   { resource: 'discount',    action: 'create' }, { resource: 'discount',    action: 'read'   },
   { resource: 'discount',    action: 'update' }, { resource: 'discount',    action: 'delete' },
   { resource: 'report',      action: 'read'   }, { resource: 'report',      action: 'export' },
+  { resource: 'supplier',    action: 'create' }, { resource: 'supplier',    action: 'read'   },
+  { resource: 'supplier',    action: 'update' }, { resource: 'supplier',    action: 'delete' },
 ]
 
 type PermRef = { resource: string; action: string }
@@ -56,6 +58,8 @@ const ROLE_PERMISSIONS: Record<string, PermRef[]> = {
     { resource: 'employee',    action: 'read'   },
     { resource: 'discount',    action: 'create' }, { resource: 'discount',    action: 'read'   },
     { resource: 'discount',    action: 'update' },
+    { resource: 'supplier',    action: 'create' }, { resource: 'supplier',    action: 'read'   },
+    { resource: 'supplier',    action: 'update' },
     { resource: 'report',      action: 'read'   }, { resource: 'report',      action: 'export' },
   ],
   CASHIER: [
@@ -477,6 +481,179 @@ async function main() {
   }
 
   console.info(`✅ Employees seeded: ${employees.length} karyawan (2 dengan PIN: 123456)`)
+
+
+  // ── Phase 2: Outlet Settings & Business Hours ────────────────────────────
+
+  await prisma.outletSettings.upsert({
+    where: { outletId: outlet.id },
+    update: {},
+    create: {
+      outletId:     outlet.id,
+      taxRate:      11,
+      taxName:      'PPN',
+      serviceCharge: 0,
+      rounding:     'NEAREST',
+      roundingValue: 100,
+      receiptFooter: 'Terima kasih telah berbelanja!\nKunjungi kami kembali.',
+      currency:     'IDR',
+      timezone:     'Asia/Jakarta',
+    },
+  })
+
+  // Jam operasional: Senin-Jumat 08:00-22:00, Sabtu-Minggu 09:00-21:00
+  const businessHours = [
+    { dayOfWeek: 0, isOpen: true,  openTime: '09:00', closeTime: '21:00' }, // Minggu
+    { dayOfWeek: 1, isOpen: true,  openTime: '08:00', closeTime: '22:00' }, // Senin
+    { dayOfWeek: 2, isOpen: true,  openTime: '08:00', closeTime: '22:00' }, // Selasa
+    { dayOfWeek: 3, isOpen: true,  openTime: '08:00', closeTime: '22:00' }, // Rabu
+    { dayOfWeek: 4, isOpen: true,  openTime: '08:00', closeTime: '22:00' }, // Kamis
+    { dayOfWeek: 5, isOpen: true,  openTime: '08:00', closeTime: '22:00' }, // Jumat
+    { dayOfWeek: 6, isOpen: true,  openTime: '09:00', closeTime: '21:00' }, // Sabtu
+  ]
+  for (const bh of businessHours) {
+    await prisma.outletBusinessHour.upsert({
+      where: { outletId_dayOfWeek: { outletId: outlet.id, dayOfWeek: bh.dayOfWeek } },
+      update: {},
+      create: { ...bh, outletId: outlet.id },
+    })
+  }
+  console.info('✅ Outlet settings & 7 business hours seeded')
+
+  // ── Phase 2: Suppliers ────────────────────────────────────────────────────
+
+  const suppliers = [
+    {
+      id: 'seed-sup-001', name: 'CV Sumber Bahan Utama', contactName: 'Pak Joko',
+      phone: '021-55551111', email: 'pembelian@sumberbahan.com',
+      address: 'Jl. Raya Pasar Minggu No. 45, Jakarta Selatan',
+      notes: 'Supplier bahan baku utama — bayar NET30',
+    },
+    {
+      id: 'seed-sup-002', name: 'PT Distribusi Kopi Nusantara', contactName: 'Bu Sari',
+      phone: '021-55552222', email: 'order@kopinusantara.com',
+      address: 'Jl. Gatot Subroto Kav. 12, Jakarta Selatan',
+      notes: 'Supplier biji kopi dan perlengkapan minuman',
+    },
+    {
+      id: 'seed-sup-003', name: 'UD Kemasan Jaya', contactName: 'Mas Rian',
+      phone: '0274-556677',
+      address: 'Jl. Malioboro No. 88, Yogyakarta',
+      notes: 'Supplier kemasan dan packaging',
+    },
+  ]
+
+  for (const sup of suppliers) {
+    await prisma.supplier.upsert({
+      where: { id: sup.id },
+      update: {},
+      create: { ...sup, outletId: outlet.id, isActive: true },
+    })
+  }
+  console.info(`✅ Suppliers seeded: ${suppliers.length} supplier`)
+
+  // ── Phase 2: Sample Purchase Orders ──────────────────────────────────────
+
+  // Ambil beberapa produk untuk dimasukkan ke PO
+  const poProducts = await prisma.product.findMany({
+    where: { outletId: outlet.id, deletedAt: null },
+    select: { id: true, sku: true, cost: true },
+    take: 4,
+  })
+
+  if (poProducts.length > 0) {
+    // PO-1: RECEIVED (sudah diterima)
+    const po1 = await prisma.purchaseOrder.upsert({
+      where: { orderNumber_outletId: { orderNumber: 'PO-20240101-0001', outletId: outlet.id } },
+      update: {},
+      create: {
+        id:          'seed-po-001',
+        outletId:    outlet.id,
+        supplierId:  'seed-sup-001',
+        orderNumber: 'PO-20240101-0001',
+        status:      'RECEIVED',
+        notes:       'PO pertama — stok awal',
+        orderedAt:   new Date('2024-01-01'),
+        expectedAt:  new Date('2024-01-05'),
+        receivedAt:  new Date('2024-01-04'),
+        totalAmount: 0,
+        createdById: admin.id,
+      },
+    })
+
+    let po1Total = 0
+    for (let i = 0; i < Math.min(2, poProducts.length); i++) {
+      const p = poProducts[i]!
+      const qty = 50, cost = Number(p.cost)
+      const total = qty * cost
+      po1Total += total
+      await prisma.purchaseOrderItem.upsert({
+        where: { id: `seed-poi-001-${i}` },
+        update: {},
+        create: {
+          id: `seed-poi-001-${i}`,
+          purchaseOrderId: po1.id, productId: p.id,
+          quantity: qty, unit: 'pcs',
+          costPerUnit: cost, totalCost: total, receivedQuantity: qty,
+        },
+      })
+    }
+    await prisma.purchaseOrder.update({ where: { id: po1.id }, data: { totalAmount: po1Total } })
+
+    // PO-2: ORDERED (sudah dipesan, belum diterima)
+    const po2 = await prisma.purchaseOrder.upsert({
+      where: { orderNumber_outletId: { orderNumber: 'PO-20241001-0002', outletId: outlet.id } },
+      update: {},
+      create: {
+        id:          'seed-po-002',
+        outletId:    outlet.id,
+        supplierId:  'seed-sup-002',
+        orderNumber: 'PO-20241001-0002',
+        status:      'ORDERED',
+        notes:       'Restock bahan minuman',
+        orderedAt:   new Date(),
+        expectedAt:  new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        totalAmount: 0,
+        createdById: admin.id,
+      },
+    })
+
+    let po2Total = 0
+    for (let i = 2; i < Math.min(4, poProducts.length); i++) {
+      const p = poProducts[i]!
+      const qty = 100, cost = Number(p.cost)
+      const total = qty * cost
+      po2Total += total
+      await prisma.purchaseOrderItem.upsert({
+        where: { id: `seed-poi-002-${i}` },
+        update: {},
+        create: {
+          id: `seed-poi-002-${i}`,
+          purchaseOrderId: po2.id, productId: p.id,
+          quantity: qty, unit: 'pcs',
+          costPerUnit: cost, totalCost: total, receivedQuantity: 0,
+        },
+      })
+    }
+    await prisma.purchaseOrder.update({ where: { id: po2.id }, data: { totalAmount: po2Total } })
+
+    // PO-3: DRAFT
+    await prisma.purchaseOrder.upsert({
+      where: { orderNumber_outletId: { orderNumber: 'PO-20241015-0003', outletId: outlet.id } },
+      update: {},
+      create: {
+        id:          'seed-po-003',
+        outletId:    outlet.id,
+        supplierId:  'seed-sup-003',
+        orderNumber: 'PO-20241015-0003',
+        status:      'DRAFT',
+        notes:       'Perlu review dulu sebelum dikirim',
+        totalAmount: 0,
+        createdById: admin.id,
+      },
+    })
+    console.info('✅ Purchase Orders seeded: 3 PO (1 RECEIVED, 1 ORDERED, 1 DRAFT)')
+  }
 
   console.info('\n🎉 Seed completed!\n')
   console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
