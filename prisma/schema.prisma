@@ -28,6 +28,7 @@ model User {
   refreshTokens        RefreshToken[]
   auditLogs            AuditLog[]
   inventoryAdjustments InventoryAdjustment[]
+  carts                Cart[]
 
   @@index([email])
   @@index([outletId])
@@ -95,6 +96,7 @@ model Outlet {
   businessHours  OutletBusinessHour[]
   suppliers      Supplier[]
   purchaseOrders PurchaseOrder[]
+  carts          Cart[]
 
   @@map("outlets")
 }
@@ -256,6 +258,7 @@ model Product {
   images         ProductImage[]
   inventoryItem       InventoryItem?
   purchaseOrderItems  PurchaseOrderItem[]
+  cartItems           CartItem[]
 
   @@unique([sku, outletId])
   @@index([categoryId])
@@ -280,6 +283,7 @@ model ProductVariant {
 
   product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
   images  ProductImage[]
+  cartItems CartItem[]
 
   @@unique([sku, productId])
   @@index([productId])
@@ -317,6 +321,7 @@ model ProductModifier {
   updatedAt       DateTime @updatedAt
 
   modifierGroup ProductModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  cartItemModifiers CartItemModifier[]
 
   @@index([modifierGroupId])
   @@map("product_modifiers")
@@ -457,6 +462,71 @@ model OutletBusinessHour {
   @@unique([outletId, dayOfWeek])
   @@index([outletId])
   @@map("outlet_business_hours")
+}
+
+// ─── Cart ─────────────────────────────────────────────────────────────────────
+
+enum CartStatus {
+  ACTIVE       /// Sedang diproses kasir
+  CHECKED_OUT  /// Sudah dikonversi ke Order
+  ABANDONED    /// Dibatalkan / ditinggal
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  outletId  String
+  userId    String
+  notes     String?
+  status    CartStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  outlet Outlet     @relation(fields: [outletId], references: [id])
+  user   User       @relation(fields: [userId], references: [id])
+  items  CartItem[]
+
+  @@index([outletId, userId, status])
+  @@index([userId])
+  @@map("carts")
+}
+
+model CartItem {
+  id        String  @id @default(cuid())
+  cartId    String
+  productId String
+  variantId String?
+  /// Jumlah item — mendukung desimal untuk produk curah (misal 0.5 kg)
+  quantity  Decimal @db.Decimal(10, 3)
+  /// Snapshot harga satuan saat item ditambahkan (tidak berubah meski harga produk berubah)
+  unitPrice Decimal @db.Decimal(15, 2)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cart      Cart               @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product            @relation(fields: [productId], references: [id])
+  variant   ProductVariant?    @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  modifiers CartItemModifier[]
+
+  @@index([cartId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+model CartItemModifier {
+  id         String  @id @default(cuid())
+  cartItemId String
+  modifierId String
+  /// Snapshot nama modifier saat ditambahkan
+  name       String
+  /// Snapshot harga modifier saat ditambahkan
+  price      Decimal @db.Decimal(15, 2)
+
+  cartItem CartItem        @relation(fields: [cartItemId], references: [id], onDelete: Cascade)
+  modifier ProductModifier @relation(fields: [modifierId], references: [id])
+
+  @@index([cartItemId])
+  @@map("cart_item_modifiers")
 }
 
 // ─── Supplier & Purchase Order ────────────────────────────────────────────────

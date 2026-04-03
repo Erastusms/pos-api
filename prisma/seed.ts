@@ -36,6 +36,8 @@ const PERMISSIONS = [
   { resource: 'report',      action: 'read'   }, { resource: 'report',      action: 'export' },
   { resource: 'supplier',    action: 'create' }, { resource: 'supplier',    action: 'read'   },
   { resource: 'supplier',    action: 'update' }, { resource: 'supplier',    action: 'delete' },
+  { resource: 'cart',        action: 'create' }, { resource: 'cart',        action: 'read'   },
+  { resource: 'cart',        action: 'update' }, { resource: 'cart',        action: 'delete' },
 ]
 
 type PermRef = { resource: string; action: string }
@@ -61,6 +63,8 @@ const ROLE_PERMISSIONS: Record<string, PermRef[]> = {
     { resource: 'supplier',    action: 'create' }, { resource: 'supplier',    action: 'read'   },
     { resource: 'supplier',    action: 'update' },
     { resource: 'report',      action: 'read'   }, { resource: 'report',      action: 'export' },
+    { resource: 'cart',        action: 'create' }, { resource: 'cart',        action: 'read'   },
+    { resource: 'cart',        action: 'update' }, { resource: 'cart',        action: 'delete' },
   ],
   CASHIER: [
     { resource: 'category',    action: 'read'   },
@@ -69,6 +73,8 @@ const ROLE_PERMISSIONS: Record<string, PermRef[]> = {
     { resource: 'transaction', action: 'create' }, { resource: 'transaction', action: 'read' },
     { resource: 'customer',    action: 'create' }, { resource: 'customer',    action: 'read' },
     { resource: 'discount',    action: 'read'   },
+    { resource: 'cart',        action: 'create' }, { resource: 'cart',        action: 'read'   },
+    { resource: 'cart',        action: 'update' }, { resource: 'cart',        action: 'delete' },
   ],
 }
 
@@ -653,6 +659,58 @@ async function main() {
       },
     })
     console.info('✅ Purchase Orders seeded: 3 PO (1 RECEIVED, 1 ORDERED, 1 DRAFT)')
+  }
+
+  // ── Phase 7: Sample Cart ───────────────────────────────────────────────────
+  {
+    // Ambil produk yang ada untuk dimasukkan ke sample cart
+    const sampleProducts = await prisma.product.findMany({
+      where:  { outletId: outlet.id, isActive: true, deletedAt: null },
+      select: { id: true, name: true, price: true, type: true },
+      take:   3,
+      orderBy: { createdAt: 'asc' },
+    })
+
+    if (sampleProducts.length > 0) {
+      const cashier = await prisma.user.findUnique({ where: { email: 'admin@pos.com' } })
+      const settings = await prisma.outletSettings.findUnique({
+        where:  { outletId: outlet.id },
+        select: { taxRate: true, serviceCharge: true },
+      })
+
+      const cartId = 'seed-cart-001'
+      const cart   = await prisma.cart.upsert({
+        where:  { id: cartId },
+        update: {},
+        create: {
+          id:       cartId,
+          outletId: outlet.id,
+          userId:   cashier!.id,
+          notes:    'Meja 5 - sample cart dari seed',
+          status:   'ACTIVE',
+        },
+      })
+
+      // Hapus item lama agar upsert idempoten
+      await prisma.cartItem.deleteMany({ where: { cartId: cart.id } })
+
+      // Tambahkan item dari produk yang tersedia
+      for (let i = 0; i < sampleProducts.length; i++) {
+        const p = sampleProducts[i]!
+        await prisma.cartItem.create({
+          data: {
+            id:        `seed-cartitem-00${i + 1}`,
+            cartId:    cart.id,
+            productId: p.id,
+            quantity:  i === 0 ? 2 : 1,
+            unitPrice: Number(p.price),
+          },
+        })
+      }
+
+      const itemCount = sampleProducts.length
+      console.info(`✅ Sample Cart seeded: 1 cart ACTIVE (${itemCount} item)`)
+    }
   }
 
   console.info('\n🎉 Seed completed!\n')

@@ -7,6 +7,7 @@ import swaggerUi from '@fastify/swagger-ui'
 import multipart from '@fastify/multipart'
 import { env } from './env'
 import { errorHandler } from '../shared/errors'
+import { cartRoutes }     from '../modules/cart/cart.routes'
 import { authRoutes }     from '../modules/auth/auth.routes'
 import { categoryRoutes } from '../modules/category/category.routes'
 import { inventoryRoutes } from '../modules/inventory/inventory.routes'
@@ -86,6 +87,7 @@ export async function buildApp() {
         { name: 'Employee',       description: 'Manajemen karyawan & jadwal shift' },
         { name: 'Supplier',       description: 'Manajemen supplier' },
         { name: 'Purchase Order', description: 'Pembelian & penerimaan barang dari supplier' },
+        { name: 'Cart',           description: 'Manajemen keranjang belanja (open bill)' },
       ],
     },
   })
@@ -106,6 +108,7 @@ export async function buildApp() {
   await app.register(inventoryRoutes,{ prefix: '/api/v1/inventory'        })
   await app.register(employeeRoutes, { prefix: '/api/v1/employees'        })
   await app.register(supplierRoutes, { prefix: '/api/v1/suppliers'        })
+  await app.register(cartRoutes,     { prefix: '/api/v1/carts'            })
 
   // ── Health ────────────────────────────────────────────────────────────────
   app.get('/health', {

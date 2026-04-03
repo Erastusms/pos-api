@@ -10,6 +10,7 @@ export const RESOURCES = {
   DISCOUNT:    'discount',
   REPORT:      'report',
   SUPPLIER:    'supplier',
+  CART:        'cart',
 } as const
 
 export const ACTIONS = {
