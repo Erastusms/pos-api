@@ -8,6 +8,7 @@ import multipart from '@fastify/multipart'
 import { env } from './env'
 import { errorHandler } from '../shared/errors'
 import { cartRoutes }     from '../modules/cart/cart.routes'
+import { discountRoutes } from '../modules/discount/discount.routes'
 import { authRoutes }     from '../modules/auth/auth.routes'
 import { categoryRoutes } from '../modules/category/category.routes'
 import { inventoryRoutes } from '../modules/inventory/inventory.routes'
@@ -88,6 +89,7 @@ export async function buildApp() {
         { name: 'Supplier',       description: 'Manajemen supplier' },
         { name: 'Purchase Order', description: 'Pembelian & penerimaan barang dari supplier' },
         { name: 'Cart',           description: 'Manajemen keranjang belanja (open bill)' },
+        { name: 'Discount',       description: 'Manajemen diskon & promo (persentase, nominal, per-item, per-bill)' },
       ],
     },
   })
@@ -109,6 +111,7 @@ export async function buildApp() {
   await app.register(employeeRoutes, { prefix: '/api/v1/employees'        })
   await app.register(supplierRoutes, { prefix: '/api/v1/suppliers'        })
   await app.register(cartRoutes,     { prefix: '/api/v1/carts'            })
+  await app.register(discountRoutes, { prefix: '/api/v1/discounts'        })
 
   // ── Health ────────────────────────────────────────────────────────────────
   app.get('/health', {

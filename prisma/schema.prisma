@@ -97,6 +97,7 @@ model Outlet {
   suppliers      Supplier[]
   purchaseOrders PurchaseOrder[]
   carts          Cart[]
+  discounts      Discount[]
 
   @@map("outlets")
 }
@@ -259,6 +260,7 @@ model Product {
   inventoryItem       InventoryItem?
   purchaseOrderItems  PurchaseOrderItem[]
   cartItems           CartItem[]
+  discountProducts    DiscountProduct[]
 
   @@unique([sku, outletId])
   @@index([categoryId])
@@ -464,6 +466,63 @@ model OutletBusinessHour {
   @@map("outlet_business_hours")
 }
 
+// ─── Discount ─────────────────────────────────────────────────────────────────
+
+enum DiscountType {
+  PERCENTAGE    /// Potongan dalam persen, e.g. 10% → value = 10
+  FIXED_AMOUNT  /// Potongan nominal rupiah, e.g. Rp 10.000 → value = 10000
+}
+
+enum DiscountScope {
+  PER_ITEM  /// Berlaku untuk produk tertentu yang didaftarkan di DiscountProduct
+  PER_BILL  /// Berlaku untuk seluruh bill
+}
+
+model Discount {
+  id          String        @id @default(cuid())
+  outletId    String
+  name        String
+  code        String?       /// Kode promo opsional, e.g. "MERDEKA17"
+  description String?
+  type        DiscountType
+  scope       DiscountScope
+  /// Nilai persen (0-100) atau nominal (Rp) tergantung type
+  value       Decimal       @db.Decimal(10, 2)
+  /// Minimum subtotal agar diskon berlaku
+  minPurchase Decimal?      @db.Decimal(15, 2)
+  /// Cap jumlah diskon maksimal (terutama untuk PERCENTAGE)
+  maxDiscount Decimal?      @db.Decimal(15, 2)
+  isActive    Boolean       @default(true)
+  startAt     DateTime?
+  endAt       DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  outlet   Outlet            @relation(fields: [outletId], references: [id])
+  products DiscountProduct[]
+  carts    Cart[]
+
+  @@unique([code, outletId])
+  @@index([outletId, isActive])
+  @@index([code])
+  @@map("discounts")
+}
+
+/// Junction: produk mana saja yang berlaku untuk diskon PER_ITEM
+model DiscountProduct {
+  discountId String
+  productId  String
+
+  discount Discount @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([discountId, productId])
+  @@index([discountId])
+  @@index([productId])
+  @@map("discount_products")
+}
+
 // ─── Cart ─────────────────────────────────────────────────────────────────────
 
 enum CartStatus {
@@ -473,17 +532,19 @@ enum CartStatus {
 }
 
 model Cart {
-  id        String     @id @default(cuid())
-  outletId  String
-  userId    String
-  notes     String?
-  status    CartStatus @default(ACTIVE)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id         String     @id @default(cuid())
+  outletId   String
+  userId     String
+  discountId String?    /// FK ke Discount yang sedang diterapkan (opsional)
+  notes      String?
+  status     CartStatus @default(ACTIVE)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
 
-  outlet Outlet     @relation(fields: [outletId], references: [id])
-  user   User       @relation(fields: [userId], references: [id])
-  items  CartItem[]
+  outlet   Outlet     @relation(fields: [outletId], references: [id])
+  user     User       @relation(fields: [userId], references: [id])
+  discount Discount?  @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  items    CartItem[]
 
   @@index([outletId, userId, status])
   @@index([userId])

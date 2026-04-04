@@ -661,6 +661,118 @@ async function main() {
     console.info('✅ Purchase Orders seeded: 3 PO (1 RECEIVED, 1 ORDERED, 1 DRAFT)')
   }
 
+  // ── Phase 3.2: Discounts ──────────────────────────────────────────────────
+  {
+    // Ambil beberapa produk untuk diskon PER_ITEM
+    const perItemProducts = await prisma.product.findMany({
+      where:  { outletId: outlet.id, deletedAt: null, isActive: true },
+      select: { id: true, sku: true, name: true },
+      take:   3,
+      orderBy: { createdAt: 'asc' },
+    })
+
+    const discounts = [
+      // 1. Diskon weekend 10% — PER_BILL, PERCENTAGE, tanpa batas waktu
+      {
+        id:          'seed-disc-001',
+        name:        'Diskon Weekend 10%',
+        code:        'WEEKEND10',
+        description: 'Diskon 10% untuk semua pembelian di akhir pekan',
+        type:        'PERCENTAGE' as const,
+        scope:       'PER_BILL'   as const,
+        value:       10,
+        minPurchase: 50000,
+        maxDiscount: 30000,
+        isActive:    true,
+        productIds:  [] as string[],
+      },
+      // 2. Diskon Kemerdekaan Rp 17.000 — PER_BILL, FIXED_AMOUNT, dengan periode
+      {
+        id:          'seed-disc-002',
+        name:        'Promo Kemerdekaan',
+        code:        'MERDEKA17',
+        description: 'Potongan Rp 17.000 untuk merayakan HUT RI',
+        type:        'FIXED_AMOUNT' as const,
+        scope:       'PER_BILL'     as const,
+        value:       17000,
+        minPurchase: 100000,
+        maxDiscount: null,
+        isActive:    true,
+        startAt:     new Date('2025-08-01T00:00:00.000Z'),
+        endAt:       new Date('2025-08-31T23:59:59.000Z'),
+        productIds:  [] as string[],
+      },
+      // 3. Buy More Save More — PER_ITEM, PERCENTAGE (untuk produk tertentu)
+      {
+        id:          'seed-disc-003',
+        name:        'Happy Hour Minuman 15%',
+        code:        'HAPPYHOUR',
+        description: 'Diskon 15% untuk produk minuman pilihan jam 14:00-17:00',
+        type:        'PERCENTAGE' as const,
+        scope:       'PER_ITEM'   as const,
+        value:       15,
+        minPurchase: null,
+        maxDiscount: 20000,
+        isActive:    true,
+        productIds:  perItemProducts.slice(0, 2).map((p) => p.id),
+      },
+      // 4. Diskon nominal per item — FIXED_AMOUNT, PER_ITEM
+      {
+        id:          'seed-disc-004',
+        name:        'Hemat Rp 5.000 per Item',
+        code:        'ITEM5K',
+        description: 'Potongan Rp 5.000 per item untuk produk pilihan',
+        type:        'FIXED_AMOUNT' as const,
+        scope:       'PER_ITEM'     as const,
+        value:       5000,
+        minPurchase: null,
+        maxDiscount: null,
+        isActive:    true,
+        productIds:  perItemProducts.length > 0 ? [perItemProducts[0]!.id] : [],
+      },
+      // 5. Diskon non-aktif (untuk tes filter isActive=false)
+      {
+        id:          'seed-disc-005',
+        name:        'Promo Tidak Aktif',
+        code:        'INACTIVE99',
+        description: 'Diskon yang sudah dinonaktifkan',
+        type:        'PERCENTAGE' as const,
+        scope:       'PER_BILL'   as const,
+        value:       99,
+        minPurchase: null,
+        maxDiscount: null,
+        isActive:    false,
+        productIds:  [] as string[],
+      },
+    ]
+
+    for (const disc of discounts) {
+      const { productIds, startAt, endAt, ...rest } = disc as typeof disc & {
+        startAt?: Date
+        endAt?:   Date
+      }
+
+      await prisma.discount.upsert({
+        where:  { id: disc.id },
+        update: {},
+        create: {
+          ...rest,
+          outletId: outlet.id,
+          ...(startAt ? { startAt } : {}),
+          ...(endAt   ? { endAt   } : {}),
+          ...(productIds.length ? {
+            products: { create: productIds.map((pid) => ({ productId: pid })) },
+          } : {}),
+        },
+      })
+    }
+
+    console.info(`✅ Discounts seeded: ${discounts.length} diskon (4 aktif, 1 nonaktif)`)
+    if (perItemProducts.length > 0) {
+      console.info(`   PER_ITEM discounts berlaku untuk: ${perItemProducts.map(p => p.sku).join(', ')}`)
+    }
+  }
+
   // ── Phase 7: Sample Cart ───────────────────────────────────────────────────
   {
     // Ambil produk yang ada untuk dimasukkan ke sample cart
