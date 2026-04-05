@@ -9,6 +9,7 @@ import { env } from './env'
 import { errorHandler } from '../shared/errors'
 import { cartRoutes }     from '../modules/cart/cart.routes'
 import { discountRoutes } from '../modules/discount/discount.routes'
+import { orderRoutes }    from '../modules/order/order.routes'
 import { authRoutes }     from '../modules/auth/auth.routes'
 import { categoryRoutes } from '../modules/category/category.routes'
 import { inventoryRoutes } from '../modules/inventory/inventory.routes'
@@ -90,6 +91,7 @@ export async function buildApp() {
         { name: 'Purchase Order', description: 'Pembelian & penerimaan barang dari supplier' },
         { name: 'Cart',           description: 'Manajemen keranjang belanja (open bill)' },
         { name: 'Discount',       description: 'Manajemen diskon & promo (persentase, nominal, per-item, per-bill)' },
+        { name: 'Order',          description: 'Lifecycle order: PENDING → PAID → DONE / VOID' },
       ],
     },
   })
@@ -112,6 +114,7 @@ export async function buildApp() {
   await app.register(supplierRoutes, { prefix: '/api/v1/suppliers'        })
   await app.register(cartRoutes,     { prefix: '/api/v1/carts'            })
   await app.register(discountRoutes, { prefix: '/api/v1/discounts'        })
+  await app.register(orderRoutes,    { prefix: '/api/v1/orders'           })
 
   // ── Health ────────────────────────────────────────────────────────────────
   app.get('/health', {

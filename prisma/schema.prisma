@@ -29,6 +29,7 @@ model User {
   auditLogs            AuditLog[]
   inventoryAdjustments InventoryAdjustment[]
   carts                Cart[]
+  orders               Order[]
 
   @@index([email])
   @@index([outletId])
@@ -98,6 +99,7 @@ model Outlet {
   purchaseOrders PurchaseOrder[]
   carts          Cart[]
   discounts      Discount[]
+  orders         Order[]
 
   @@map("outlets")
 }
@@ -261,6 +263,7 @@ model Product {
   purchaseOrderItems  PurchaseOrderItem[]
   cartItems           CartItem[]
   discountProducts    DiscountProduct[]
+  orderItems          OrderItem[]
 
   @@unique([sku, outletId])
   @@index([categoryId])
@@ -323,7 +326,8 @@ model ProductModifier {
   updatedAt       DateTime @updatedAt
 
   modifierGroup ProductModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
-  cartItemModifiers CartItemModifier[]
+  cartItemModifiers  CartItemModifier[]
+  orderItemModifiers OrderItemModifier[]
 
   @@index([modifierGroupId])
   @@map("product_modifiers")
@@ -502,6 +506,7 @@ model Discount {
   outlet   Outlet            @relation(fields: [outletId], references: [id])
   products DiscountProduct[]
   carts    Cart[]
+  orders   Order[]
 
   @@unique([code, outletId])
   @@index([outletId, isActive])
@@ -545,6 +550,7 @@ model Cart {
   user     User       @relation(fields: [userId], references: [id])
   discount Discount?  @relation(fields: [discountId], references: [id], onDelete: SetNull)
   items    CartItem[]
+  order    Order?
 
   @@index([outletId, userId, status])
   @@index([userId])
@@ -588,6 +594,119 @@ model CartItemModifier {
 
   @@index([cartItemId])
   @@map("cart_item_modifiers")
+}
+
+// ─── Order ────────────────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  PENDING    /// Baru dibuat, menunggu pembayaran
+  PAID       /// Sudah dibayar (oleh Payment module)
+  DONE       /// Selesai / sudah diserahkan ke pelanggan
+  VOID       /// Dibatalkan
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  /// Format: TRX-YYYYMMDD-XXXX — auto-generated, unik per outlet per hari
+  orderNumber String
+  outletId    String
+  /// Kasir yang membuat order
+  userId      String
+  /// Cart asal — UNIQUE: satu cart hanya bisa di-checkout sekali
+  cartId      String?     @unique
+  /// FK ke Discount (untuk audit, nullable jika diskon dihapus)
+  discountId  String?
+
+  status      OrderStatus @default(PENDING)
+  notes       String?
+
+  // ── Financial snapshot (immutable setelah order dibuat) ───────────────────
+  subtotal            Decimal @db.Decimal(15, 2)
+  discountAmount      Decimal @default(0) @db.Decimal(15, 2)
+  discountedSubtotal  Decimal @db.Decimal(15, 2)
+  serviceChargeAmount Decimal @default(0) @db.Decimal(15, 2)
+  taxAmount           Decimal @default(0) @db.Decimal(15, 2)
+  roundingAmount      Decimal @default(0) @db.Decimal(15, 2)
+  total               Decimal @db.Decimal(15, 2)
+
+  // ── Discount snapshot (readable meski diskon dihapus) ────────────────────
+  discountName  String?
+  discountCode  String?
+  discountType  String?   /// 'PERCENTAGE' | 'FIXED_AMOUNT'
+  discountScope String?   /// 'PER_ITEM' | 'PER_BILL'
+  discountValue Decimal?  @db.Decimal(10, 2)
+
+  // ── Lifecycle timestamps ──────────────────────────────────────────────────
+  paidAt      DateTime?
+  completedAt DateTime?
+  voidedAt    DateTime?
+  voidReason  String?
+  voidedById  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outlet   Outlet     @relation(fields: [outletId], references: [id])
+  user     User       @relation(fields: [userId], references: [id])
+  cart     Cart?      @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  discount Discount?  @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  items    OrderItem[]
+
+  @@unique([orderNumber, outletId])
+  @@index([outletId, status])
+  @@index([outletId, createdAt])
+  @@index([userId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id      String @id @default(cuid())
+  orderId String
+
+  /// FK nullable — produk mungkin soft-deleted di kemudian hari
+  productId String?
+  variantId String?
+
+  // ── Product snapshot (immutable) ─────────────────────────────────────────
+  productName String
+  productSku  String
+  variantName String?
+
+  quantity  Decimal @db.Decimal(10, 3)
+  unitPrice Decimal @db.Decimal(15, 2)
+  /// Diskon per-item dari PER_ITEM discount (jika berlaku)
+  itemDiscountAmount Decimal @default(0) @db.Decimal(15, 2)
+  /// lineTotal = (unitPrice + Σ modifierPrice) × qty — tidak termasuk diskon item level
+  lineTotal Decimal @db.Decimal(15, 2)
+  notes     String?
+
+  createdAt DateTime @default(now())
+
+  order     Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  modifiers OrderItemModifier[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  id          String @id @default(cuid())
+  orderItemId String
+
+  /// FK nullable — modifier mungkin soft-deleted di kemudian hari
+  modifierId String?
+
+  // ── Modifier snapshot (immutable) ────────────────────────────────────────
+  name  String
+  price Decimal @db.Decimal(15, 2)
+
+  orderItem OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifier  ProductModifier? @relation(fields: [modifierId], references: [id], onDelete: SetNull)
+
+  @@index([orderItemId])
+  @@map("order_item_modifiers")
 }
 
 // ─── Supplier & Purchase Order ────────────────────────────────────────────────

@@ -825,6 +825,182 @@ async function main() {
     }
   }
 
+  // ── Phase 3.3: Sample Orders ──────────────────────────────────────────────
+  {
+    // Ambil produk untuk di-snapshot ke order
+    const orderProducts = await prisma.product.findMany({
+      where:   { outletId: outlet.id, isActive: true, deletedAt: null },
+      select:  { id: true, name: true, sku: true, price: true },
+      take:    4,
+      orderBy: { createdAt: 'asc' },
+    })
+
+    if (orderProducts.length >= 2) {
+      // ── Order 1: PAID (sudah dibayar) ────────────────────────────────────
+      const order1 = await prisma.order.upsert({
+        where:  { id: 'seed-order-001' },
+        update: {},
+        create: {
+          id:                  'seed-order-001',
+          orderNumber:         'TRX-20260101-0001',
+          outletId:            outlet.id,
+          userId:              admin.id,
+          status:              'PAID',
+          subtotal:            70000,
+          discountAmount:      0,
+          discountedSubtotal:  70000,
+          serviceChargeAmount: 0,
+          taxAmount:           7700,
+          roundingAmount:      300,
+          total:               78000,
+          notes:               'Order contoh — sudah dibayar',
+          paidAt:              new Date('2026-01-01T10:00:00.000Z'),
+        },
+      })
+
+      // Items order 1
+      const p1 = orderProducts[0]!
+      const p2 = orderProducts[1]!
+      await prisma.orderItem.upsert({
+        where:  { id: 'seed-oi-001-1' },
+        update: {},
+        create: {
+          id:          'seed-oi-001-1',
+          orderId:     order1.id,
+          productId:   p1.id,
+          productName: p1.name,
+          productSku:  p1.sku,
+          quantity:    1,
+          unitPrice:   Number(p1.price),
+          lineTotal:   Number(p1.price),
+        },
+      })
+      await prisma.orderItem.upsert({
+        where:  { id: 'seed-oi-001-2' },
+        update: {},
+        create: {
+          id:          'seed-oi-001-2',
+          orderId:     order1.id,
+          productId:   p2.id,
+          productName: p2.name,
+          productSku:  p2.sku,
+          quantity:    1,
+          unitPrice:   Number(p2.price),
+          lineTotal:   Number(p2.price),
+        },
+      })
+
+      // ── Order 2: DONE (selesai) ────────────────────────────────────────
+      const order2 = await prisma.order.upsert({
+        where:  { id: 'seed-order-002' },
+        update: {},
+        create: {
+          id:                  'seed-order-002',
+          orderNumber:         'TRX-20260101-0002',
+          outletId:            outlet.id,
+          userId:              admin.id,
+          status:              'DONE',
+          discountId:          'seed-disc-001',
+          discountName:        'Diskon Weekend 10%',
+          discountCode:        'WEEKEND10',
+          discountType:        'PERCENTAGE',
+          discountScope:       'PER_BILL',
+          discountValue:       10,
+          subtotal:            100000,
+          discountAmount:      10000,
+          discountedSubtotal:  90000,
+          serviceChargeAmount: 0,
+          taxAmount:           9900,
+          roundingAmount:      100,
+          total:               100000,
+          notes:               'Order dengan diskon WEEKEND10',
+          paidAt:              new Date('2026-01-01T11:00:00.000Z'),
+          completedAt:         new Date('2026-01-01T11:30:00.000Z'),
+        },
+      })
+      if (orderProducts[2]) {
+        const p3 = orderProducts[2]
+        await prisma.orderItem.upsert({
+          where:  { id: 'seed-oi-002-1' },
+          update: {},
+          create: {
+            id:            'seed-oi-002-1',
+            orderId:       order2.id,
+            productId:     p3.id,
+            productName:   p3.name,
+            productSku:    p3.sku,
+            quantity:      2,
+            unitPrice:     Number(p3.price),
+            lineTotal:     Number(p3.price) * 2,
+          },
+        })
+      }
+
+      // ── Order 3: VOID (dibatalkan) ────────────────────────────────────
+      await prisma.order.upsert({
+        where:  { id: 'seed-order-003' },
+        update: {},
+        create: {
+          id:                  'seed-order-003',
+          orderNumber:         'TRX-20260102-0001',
+          outletId:            outlet.id,
+          userId:              admin.id,
+          status:              'VOID',
+          subtotal:            35000,
+          discountAmount:      0,
+          discountedSubtotal:  35000,
+          serviceChargeAmount: 0,
+          taxAmount:           3850,
+          roundingAmount:      150,
+          total:               39000,
+          notes:               'Order dibatalkan pelanggan',
+          voidReason:          'Pelanggan membatalkan pesanan',
+          voidedAt:            new Date('2026-01-02T09:00:00.000Z'),
+          voidedById:          admin.id,
+        },
+      })
+
+      // ── Order 4: PENDING (menunggu pembayaran) ──────────────────────
+      const order4 = await prisma.order.upsert({
+        where:  { id: 'seed-order-004' },
+        update: {},
+        create: {
+          id:                  'seed-order-004',
+          orderNumber:         'TRX-20260103-0001',
+          outletId:            outlet.id,
+          userId:              admin.id,
+          status:              'PENDING',
+          subtotal:            63000,
+          discountAmount:      0,
+          discountedSubtotal:  63000,
+          serviceChargeAmount: 0,
+          taxAmount:           6930,
+          roundingAmount:      70,
+          total:               70000,
+          notes:               'Order menunggu pembayaran',
+        },
+      })
+      if (orderProducts[0]) {
+        await prisma.orderItem.upsert({
+          where:  { id: 'seed-oi-004-1' },
+          update: {},
+          create: {
+            id:          'seed-oi-004-1',
+            orderId:     order4.id,
+            productId:   orderProducts[0].id,
+            productName: orderProducts[0].name,
+            productSku:  orderProducts[0].sku,
+            quantity:    2,
+            unitPrice:   Number(orderProducts[0].price),
+            lineTotal:   Number(orderProducts[0].price) * 2,
+          },
+        })
+      }
+
+      console.info('✅ Orders seeded: 4 order (1 PENDING, 1 PAID, 1 DONE, 1 VOID)')
+    }
+  }
+
   console.info('\n🎉 Seed completed!\n')
   console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.info('  Login:')

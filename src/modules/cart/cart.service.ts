@@ -84,6 +84,8 @@ export function computeCartSummary(
     items: enrichedItems,
     discountQualifies: discountResult.qualifies,
     discountReason: discountResult.reason,
+    /** Map productId → item-level discount amount (untuk snapshot di OrderItem) */
+    itemDiscountMap: discountResult.itemDiscountMap,
   }
 }
 
