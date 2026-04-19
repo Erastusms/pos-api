@@ -7,15 +7,17 @@ import swaggerUi from '@fastify/swagger-ui'
 import multipart from '@fastify/multipart'
 import { env } from './env'
 import { errorHandler } from '../shared/errors'
-import { cartRoutes }     from '../modules/cart/cart.routes'
+import { cartRoutes } from '../modules/cart/cart.routes'
 import { discountRoutes } from '../modules/discount/discount.routes'
-import { orderRoutes }    from '../modules/order/order.routes'
-import { authRoutes }     from '../modules/auth/auth.routes'
+import { orderRoutes } from '../modules/order/order.routes'
+import { receiptRoutes } from '../modules/receipt/receipt.routes'
+import { startReceiptWorker } from '../modules/receipt/receipt.worker'
+import { authRoutes } from '../modules/auth/auth.routes'
 import { categoryRoutes } from '../modules/category/category.routes'
 import { inventoryRoutes } from '../modules/inventory/inventory.routes'
 import { employeeRoutes } from '../modules/employee/employee.routes'
-import { productRoutes }  from '../modules/product/product.routes'
-import { outletRoutes }   from '../modules/outlet/outlet.routes'
+import { productRoutes } from '../modules/product/product.routes'
+import { outletRoutes } from '../modules/outlet/outlet.routes'
 import { supplierRoutes } from '../modules/supplier/supplier.routes'
 
 export async function buildApp() {
@@ -43,14 +45,14 @@ export async function buildApp() {
   await app.register(helmet, { contentSecurityPolicy: false })
 
   await app.register(cors, {
-    origin:         env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
-    methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN.split(','),
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials:    true,
+    credentials: true,
   })
 
   await app.register(rateLimit, {
-    max:        env.RATE_LIMIT_MAX,
+    max: env.RATE_LIMIT_MAX,
     timeWindow: env.RATE_LIMIT_WINDOW_MS,
   })
 
@@ -63,7 +65,7 @@ export async function buildApp() {
     const fastifyStatic = await import('@fastify/static')
     const path = await import('path')
     await app.register(fastifyStatic.default, {
-      root:   path.resolve('uploads'),
+      root: path.resolve('uploads'),
       prefix: '/uploads/',
     })
   }
@@ -72,7 +74,11 @@ export async function buildApp() {
   await app.register(swagger, {
     openapi: {
       openapi: '3.0.0',
-      info: { title: 'POS System API', description: 'REST API untuk sistem Point of Sale', version: '1.0.0' },
+      info: {
+        title: 'POS System API',
+        description: 'REST API untuk sistem Point of Sale',
+        version: '1.0.0',
+      },
       servers: [{ url: `http://localhost:${env.PORT}`, description: 'Development server' }],
       components: {
         securitySchemes: {
@@ -80,18 +86,22 @@ export async function buildApp() {
         },
       },
       tags: [
-        { name: 'Health',         description: 'Status server' },
-        { name: 'Auth',           description: 'Autentikasi & Otorisasi' },
-        { name: 'Outlet',         description: 'Profil outlet, pengaturan, jam operasional' },
-        { name: 'Category',       description: 'Manajemen kategori produk' },
-        { name: 'Product',        description: 'Manajemen produk, variant, modifier, foto' },
-        { name: 'Inventory',      description: 'Manajemen stok & HPP (FIFO)' },
-        { name: 'Employee',       description: 'Manajemen karyawan & jadwal shift' },
-        { name: 'Supplier',       description: 'Manajemen supplier' },
+        { name: 'Health', description: 'Status server' },
+        { name: 'Auth', description: 'Autentikasi & Otorisasi' },
+        { name: 'Outlet', description: 'Profil outlet, pengaturan, jam operasional' },
+        { name: 'Category', description: 'Manajemen kategori produk' },
+        { name: 'Product', description: 'Manajemen produk, variant, modifier, foto' },
+        { name: 'Inventory', description: 'Manajemen stok & HPP (FIFO)' },
+        { name: 'Employee', description: 'Manajemen karyawan & jadwal shift' },
+        { name: 'Supplier', description: 'Manajemen supplier' },
         { name: 'Purchase Order', description: 'Pembelian & penerimaan barang dari supplier' },
-        { name: 'Cart',           description: 'Manajemen keranjang belanja (open bill)' },
-        { name: 'Discount',       description: 'Manajemen diskon & promo (persentase, nominal, per-item, per-bill)' },
-        { name: 'Order',          description: 'Lifecycle order: PENDING → PAID → DONE / VOID' },
+        { name: 'Cart', description: 'Manajemen keranjang belanja (open bill)' },
+        {
+          name: 'Discount',
+          description: 'Manajemen diskon & promo (persentase, nominal, per-item, per-bill)',
+        },
+        { name: 'Order', description: 'Lifecycle order: PENDING → PAID → DONE / VOID' },
+        { name: 'Receipt', description: 'Generate struk PDF via async queue (BullMQ)' },
       ],
     },
   })
@@ -105,26 +115,44 @@ export async function buildApp() {
   app.setErrorHandler(errorHandler)
 
   // ── Routes ────────────────────────────────────────────────────────────────
-  await app.register(authRoutes,     { prefix: '/api/v1/auth'            })
-  await app.register(outletRoutes,   { prefix: '/api/v1/outlets'          })
-  await app.register(categoryRoutes, { prefix: '/api/v1/categories'       })
-  await app.register(productRoutes,  { prefix: '/api/v1/products'         })
-  await app.register(inventoryRoutes,{ prefix: '/api/v1/inventory'        })
-  await app.register(employeeRoutes, { prefix: '/api/v1/employees'        })
-  await app.register(supplierRoutes, { prefix: '/api/v1/suppliers'        })
-  await app.register(cartRoutes,     { prefix: '/api/v1/carts'            })
-  await app.register(discountRoutes, { prefix: '/api/v1/discounts'        })
-  await app.register(orderRoutes,    { prefix: '/api/v1/orders'           })
+  await app.register(authRoutes, { prefix: '/api/v1/auth' })
+  await app.register(outletRoutes, { prefix: '/api/v1/outlets' })
+  await app.register(categoryRoutes, { prefix: '/api/v1/categories' })
+  await app.register(productRoutes, { prefix: '/api/v1/products' })
+  await app.register(inventoryRoutes, { prefix: '/api/v1/inventory' })
+  await app.register(employeeRoutes, { prefix: '/api/v1/employees' })
+  await app.register(supplierRoutes, { prefix: '/api/v1/suppliers' })
+  await app.register(cartRoutes, { prefix: '/api/v1/carts' })
+  await app.register(discountRoutes, { prefix: '/api/v1/discounts' })
+  await app.register(orderRoutes, { prefix: '/api/v1/orders' })
+  await app.register(receiptRoutes, { prefix: '/api/v1/orders/:orderId/receipt' })
+
+  // ── Background workers ────────────────────────────────────────────────────
+  if (env.NODE_ENV !== 'test') {
+    startReceiptWorker()
+  }
 
   // ── Health ────────────────────────────────────────────────────────────────
-  app.get('/health', {
-    schema: {
-      tags: ['Health'], summary: 'Server health check',
-      response: { 200: { type: 'object', properties: {
-        status: { type: 'string' }, timestamp: { type: 'string' }, uptime: { type: 'number' },
-      }}},
+  app.get(
+    '/health',
+    {
+      schema: {
+        tags: ['Health'],
+        summary: 'Server health check',
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              status: { type: 'string' },
+              timestamp: { type: 'string' },
+              uptime: { type: 'number' },
+            },
+          },
+        },
+      },
     },
-  }, async () => ({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() }))
+    async () => ({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() }),
+  )
 
   app.setNotFoundHandler((_req, reply) => {
     reply.status(404).send({

@@ -1001,6 +1001,58 @@ async function main() {
     }
   }
 
+  // ── Phase 3.4: Sample Receipts ────────────────────────────────────────────
+  {
+    // Receipt untuk seed-order-001 (PAID) — status READY (simulasi sudah selesai)
+    await prisma.receipt.upsert({
+      where:  { orderId: 'seed-order-001' },
+      update: {},
+      create: {
+        id:       'seed-receipt-001',
+        orderId:  'seed-order-001',
+        outletId: outlet.id,
+        status:   'READY',
+        pdfUrl:   '/uploads/receipts/receipt-TRX-20260101-0001-seed.pdf',
+        jobId:    'seed-job-001',
+        attempts: 1,
+      },
+    })
+
+    // Receipt untuk seed-order-002 (DONE) — status READY
+    await prisma.receipt.upsert({
+      where:  { orderId: 'seed-order-002' },
+      update: {},
+      create: {
+        id:       'seed-receipt-002',
+        orderId:  'seed-order-002',
+        outletId: outlet.id,
+        status:   'READY',
+        pdfUrl:   '/uploads/receipts/receipt-TRX-20260101-0002-seed.pdf',
+        jobId:    'seed-job-002',
+        attempts: 1,
+      },
+    })
+
+    // Receipt untuk seed-order-003 (VOID) — status FAILED (simulasi generate gagal)
+    await prisma.receipt.upsert({
+      where:  { orderId: 'seed-order-003' },
+      update: {},
+      create: {
+        id:           'seed-receipt-003',
+        orderId:      'seed-order-003',
+        outletId:     outlet.id,
+        status:       'FAILED',
+        jobId:        'seed-job-003',
+        errorMessage: 'Simulated failure for seed data',
+        attempts:     3,
+      },
+    })
+
+    // seed-order-004 (PENDING) — belum ada receipt (belum di-request)
+
+    console.info('✅ Receipts seeded: 3 receipt (2 READY, 1 FAILED)')
+  }
+
   console.info('\n🎉 Seed completed!\n')
   console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.info('  Login:')

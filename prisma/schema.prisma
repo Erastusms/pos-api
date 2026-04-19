@@ -100,6 +100,7 @@ model Outlet {
   carts          Cart[]
   discounts      Discount[]
   orders         Order[]
+  receipts       Receipt[]
 
   @@map("outlets")
 }
@@ -651,6 +652,7 @@ model Order {
   cart     Cart?      @relation(fields: [cartId], references: [id], onDelete: SetNull)
   discount Discount?  @relation(fields: [discountId], references: [id], onDelete: SetNull)
   items    OrderItem[]
+  receipt  Receipt?
 
   @@unique([orderNumber, outletId])
   @@index([outletId, status])
@@ -707,6 +709,41 @@ model OrderItemModifier {
 
   @@index([orderItemId])
   @@map("order_item_modifiers")
+}
+
+// ─── Receipt ──────────────────────────────────────────────────────────────────
+
+enum ReceiptStatus {
+  QUEUED      /// Job PDF sudah antri di queue
+  GENERATING  /// Sedang di-generate oleh worker
+  READY       /// PDF siap didownload
+  FAILED      /// Gagal generate (akan di-retry)
+}
+
+model Receipt {
+  id          String        @id @default(cuid())
+  orderId     String        @unique   /// Satu order → satu receipt (upsert-able)
+  outletId    String
+
+  status      ReceiptStatus @default(QUEUED)
+  /// Relative path / URL ke file PDF
+  pdfUrl      String?
+  /// ID job BullMQ — untuk tracking / cancellation
+  jobId       String?
+  /// Pesan error jika status = FAILED
+  errorMessage String?
+  /// Berapa kali sudah dicoba generate
+  attempts    Int           @default(0)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  outlet Outlet @relation(fields: [outletId], references: [id])
+
+  @@index([outletId])
+  @@index([status])
+  @@map("receipts")
 }
 
 // ─── Supplier & Purchase Order ────────────────────────────────────────────────

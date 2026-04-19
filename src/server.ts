@@ -2,6 +2,7 @@ import { buildApp } from './config/app'
 import { env } from './config/env'
 import { prisma } from './infrastructure/database/prisma.client'
 import { redis } from './infrastructure/cache/redis.client'
+import { stopReceiptWorker } from './modules/receipt/receipt.worker'
 
 async function start() {
   const app = await buildApp()
@@ -10,6 +11,7 @@ async function start() {
   const gracefulShutdown = async (signal: string) => {
     console.info(`\n⏳ Received ${signal}, shutting down gracefully...`)
     try {
+      await stopReceiptWorker()
       await app.close()
       await prisma.$disconnect()
       await redis.quit()
