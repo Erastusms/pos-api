@@ -19,12 +19,8 @@ const envSchema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
   // ─── JWT ───────────────────────────────────────────────────────────────────
-  JWT_ACCESS_SECRET: z
-    .string()
-    .min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
-  JWT_REFRESH_SECRET: z
-    .string()
-    .min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
+  JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
+  JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN_DAYS: z
     .string()
@@ -47,6 +43,14 @@ const envSchema = z.object({
 
   // ─── CORS ──────────────────────────────────────────────────────────────────
   CORS_ORIGIN: z.string().default('*'),
+
+  // ─── Midtrans ──────────────────────────────────────────────────────────────
+  MIDTRANS_SERVER_KEY: z.string({ required_error: 'MIDTRANS_SERVER_KEY is required' }).min(1),
+  MIDTRANS_CLIENT_KEY: z.string({ required_error: 'MIDTRANS_CLIENT_KEY is required' }).min(1),
+  MIDTRANS_IS_PRODUCTION: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
 })
 
 const result = envSchema.safeParse(process.env)

@@ -101,6 +101,7 @@ model Outlet {
   discounts      Discount[]
   orders         Order[]
   receipts       Receipt[]
+  payments       Payment[]
 
   @@map("outlets")
 }
@@ -255,16 +256,16 @@ model Product {
   updatedAt   DateTime    @updatedAt
   deletedAt   DateTime?
 
-  category       Category?             @relation(fields: [categoryId], references: [id])
-  outlet         Outlet                @relation(fields: [outletId], references: [id])
-  variants       ProductVariant[]
-  modifierGroups ProductModifierGroup[]
-  images         ProductImage[]
-  inventoryItem       InventoryItem?
-  purchaseOrderItems  PurchaseOrderItem[]
-  cartItems           CartItem[]
-  discountProducts    DiscountProduct[]
-  orderItems          OrderItem[]
+  category           Category?              @relation(fields: [categoryId], references: [id])
+  outlet             Outlet                 @relation(fields: [outletId], references: [id])
+  variants           ProductVariant[]
+  modifierGroups     ProductModifierGroup[]
+  images             ProductImage[]
+  inventoryItem      InventoryItem?
+  purchaseOrderItems PurchaseOrderItem[]
+  cartItems          CartItem[]
+  discountProducts   DiscountProduct[]
+  orderItems         OrderItem[]
 
   @@unique([sku, outletId])
   @@index([categoryId])
@@ -287,8 +288,8 @@ model ProductVariant {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
-  images  ProductImage[]
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  images    ProductImage[]
   cartItems CartItem[]
 
   @@unique([sku, productId])
@@ -326,7 +327,7 @@ model ProductModifier {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  modifierGroup ProductModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  modifierGroup      ProductModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
   cartItemModifiers  CartItemModifier[]
   orderItemModifiers OrderItemModifier[]
 
@@ -426,26 +427,26 @@ model InventoryCostLayer {
 /// Menggunakan pendekatan row per outlet (bukan JSON column) agar bisa di-index
 /// dan di-validate di level DB.
 model OutletSettings {
-  id              String  @id @default(cuid())
-  outletId        String  @unique
+  id             String   @id @default(cuid())
+  outletId       String   @unique
   /// PPN dalam persen, e.g. 11.00 untuk 11%
-  taxRate         Decimal @default(0)   @db.Decimal(5, 2)
-  taxName         String  @default("PPN")
+  taxRate        Decimal  @default(0) @db.Decimal(5, 2)
+  taxName        String   @default("PPN")
   /// Service charge dalam persen
-  serviceCharge   Decimal @default(0)   @db.Decimal(5, 2)
+  serviceCharge  Decimal  @default(0) @db.Decimal(5, 2)
   /// Pembulatan harga: NONE | UP | DOWN | NEAREST
-  rounding        String  @default("NONE")
+  rounding       String   @default("NONE")
   /// Nilai pembulatan, e.g. 100, 500, 1000
-  roundingValue   Int     @default(0)
+  roundingValue  Int      @default(0)
   /// Footer struk / receipt
-  receiptFooter   String?
+  receiptFooter  String?
   /// URL logo untuk struk
-  receiptLogoUrl  String?
+  receiptLogoUrl String?
   /// Mata uang, e.g. "IDR"
-  currency        String  @default("IDR")
+  currency       String   @default("IDR")
   /// Timezone, e.g. "Asia/Jakarta"
-  timezone        String  @default("Asia/Jakarta")
-  updatedAt       DateTime @updatedAt
+  timezone       String   @default("Asia/Jakarta")
+  updatedAt      DateTime @updatedAt
 
   outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
 
@@ -459,8 +460,8 @@ model OutletBusinessHour {
   /// 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
   dayOfWeek Int
   isOpen    Boolean  @default(true)
-  openTime  String   @default("08:00")   /// "HH:MM"
-  closeTime String   @default("22:00")   /// "HH:MM"
+  openTime  String   @default("08:00") /// "HH:MM"
+  closeTime String   @default("22:00") /// "HH:MM"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -474,20 +475,20 @@ model OutletBusinessHour {
 // ─── Discount ─────────────────────────────────────────────────────────────────
 
 enum DiscountType {
-  PERCENTAGE    /// Potongan dalam persen, e.g. 10% → value = 10
-  FIXED_AMOUNT  /// Potongan nominal rupiah, e.g. Rp 10.000 → value = 10000
+  PERCENTAGE /// Potongan dalam persen, e.g. 10% → value = 10
+  FIXED_AMOUNT /// Potongan nominal rupiah, e.g. Rp 10.000 → value = 10000
 }
 
 enum DiscountScope {
-  PER_ITEM  /// Berlaku untuk produk tertentu yang didaftarkan di DiscountProduct
-  PER_BILL  /// Berlaku untuk seluruh bill
+  PER_ITEM /// Berlaku untuk produk tertentu yang didaftarkan di DiscountProduct
+  PER_BILL /// Berlaku untuk seluruh bill
 }
 
 model Discount {
   id          String        @id @default(cuid())
   outletId    String
   name        String
-  code        String?       /// Kode promo opsional, e.g. "MERDEKA17"
+  code        String? /// Kode promo opsional, e.g. "MERDEKA17"
   description String?
   type        DiscountType
   scope       DiscountScope
@@ -532,16 +533,16 @@ model DiscountProduct {
 // ─── Cart ─────────────────────────────────────────────────────────────────────
 
 enum CartStatus {
-  ACTIVE       /// Sedang diproses kasir
-  CHECKED_OUT  /// Sudah dikonversi ke Order
-  ABANDONED    /// Dibatalkan / ditinggal
+  ACTIVE /// Sedang diproses kasir
+  CHECKED_OUT /// Sudah dikonversi ke Order
+  ABANDONED /// Dibatalkan / ditinggal
 }
 
 model Cart {
   id         String     @id @default(cuid())
   outletId   String
   userId     String
-  discountId String?    /// FK ke Discount yang sedang diterapkan (opsional)
+  discountId String? /// FK ke Discount yang sedang diterapkan (opsional)
   notes      String?
   status     CartStatus @default(ACTIVE)
   createdAt  DateTime   @default(now())
@@ -559,14 +560,14 @@ model Cart {
 }
 
 model CartItem {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   cartId    String
   productId String
   variantId String?
   /// Jumlah item — mendukung desimal untuk produk curah (misal 0.5 kg)
-  quantity  Decimal @db.Decimal(10, 3)
+  quantity  Decimal  @db.Decimal(10, 3)
   /// Snapshot harga satuan saat item ditambahkan (tidak berubah meski harga produk berubah)
-  unitPrice Decimal @db.Decimal(15, 2)
+  unitPrice Decimal  @db.Decimal(15, 2)
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -600,26 +601,26 @@ model CartItemModifier {
 // ─── Order ────────────────────────────────────────────────────────────────────
 
 enum OrderStatus {
-  PENDING    /// Baru dibuat, menunggu pembayaran
-  PAID       /// Sudah dibayar (oleh Payment module)
-  DONE       /// Selesai / sudah diserahkan ke pelanggan
-  VOID       /// Dibatalkan
+  PENDING /// Baru dibuat, menunggu pembayaran
+  PAID /// Sudah dibayar (oleh Payment module)
+  DONE /// Selesai / sudah diserahkan ke pelanggan
+  VOID /// Dibatalkan
 }
 
 model Order {
-  id          String      @id @default(cuid())
+  id          String  @id @default(cuid())
   /// Format: TRX-YYYYMMDD-XXXX — auto-generated, unik per outlet per hari
   orderNumber String
   outletId    String
   /// Kasir yang membuat order
   userId      String
   /// Cart asal — UNIQUE: satu cart hanya bisa di-checkout sekali
-  cartId      String?     @unique
+  cartId      String? @unique
   /// FK ke Discount (untuk audit, nullable jika diskon dihapus)
   discountId  String?
 
-  status      OrderStatus @default(PENDING)
-  notes       String?
+  status OrderStatus @default(PENDING)
+  notes  String?
 
   // ── Financial snapshot (immutable setelah order dibuat) ───────────────────
   subtotal            Decimal @db.Decimal(15, 2)
@@ -633,9 +634,9 @@ model Order {
   // ── Discount snapshot (readable meski diskon dihapus) ────────────────────
   discountName  String?
   discountCode  String?
-  discountType  String?   /// 'PERCENTAGE' | 'FIXED_AMOUNT'
-  discountScope String?   /// 'PER_ITEM' | 'PER_BILL'
-  discountValue Decimal?  @db.Decimal(10, 2)
+  discountType  String? /// 'PERCENTAGE' | 'FIXED_AMOUNT'
+  discountScope String? /// 'PER_ITEM' | 'PER_BILL'
+  discountValue Decimal? @db.Decimal(10, 2)
 
   // ── Lifecycle timestamps ──────────────────────────────────────────────────
   paidAt      DateTime?
@@ -647,12 +648,13 @@ model Order {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  outlet   Outlet     @relation(fields: [outletId], references: [id])
-  user     User       @relation(fields: [userId], references: [id])
-  cart     Cart?      @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  discount Discount?  @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  outlet   Outlet      @relation(fields: [outletId], references: [id])
+  user     User        @relation(fields: [userId], references: [id])
+  cart     Cart?       @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  discount Discount?   @relation(fields: [discountId], references: [id], onDelete: SetNull)
   items    OrderItem[]
   receipt  Receipt?
+  payment  Payment?
 
   @@unique([orderNumber, outletId])
   @@index([outletId, status])
@@ -674,13 +676,13 @@ model OrderItem {
   productSku  String
   variantName String?
 
-  quantity  Decimal @db.Decimal(10, 3)
-  unitPrice Decimal @db.Decimal(15, 2)
+  quantity           Decimal @db.Decimal(10, 3)
+  unitPrice          Decimal @db.Decimal(15, 2)
   /// Diskon per-item dari PER_ITEM discount (jika berlaku)
   itemDiscountAmount Decimal @default(0) @db.Decimal(15, 2)
   /// lineTotal = (unitPrice + Σ modifierPrice) × qty — tidak termasuk diskon item level
-  lineTotal Decimal @db.Decimal(15, 2)
-  notes     String?
+  lineTotal          Decimal @db.Decimal(15, 2)
+  notes              String?
 
   createdAt DateTime @default(now())
 
@@ -714,29 +716,29 @@ model OrderItemModifier {
 // ─── Receipt ──────────────────────────────────────────────────────────────────
 
 enum ReceiptStatus {
-  QUEUED      /// Job PDF sudah antri di queue
-  GENERATING  /// Sedang di-generate oleh worker
-  READY       /// PDF siap didownload
-  FAILED      /// Gagal generate (akan di-retry)
+  QUEUED /// Job PDF sudah antri di queue
+  GENERATING /// Sedang di-generate oleh worker
+  READY /// PDF siap didownload
+  FAILED /// Gagal generate (akan di-retry)
 }
 
 model Receipt {
-  id          String        @id @default(cuid())
-  orderId     String        @unique   /// Satu order → satu receipt (upsert-able)
-  outletId    String
+  id       String @id @default(cuid())
+  orderId  String @unique /// Satu order → satu receipt (upsert-able)
+  outletId String
 
-  status      ReceiptStatus @default(QUEUED)
+  status       ReceiptStatus @default(QUEUED)
   /// Relative path / URL ke file PDF
-  pdfUrl      String?
+  pdfUrl       String?
   /// ID job BullMQ — untuk tracking / cancellation
-  jobId       String?
+  jobId        String?
   /// Pesan error jika status = FAILED
   errorMessage String?
   /// Berapa kali sudah dicoba generate
-  attempts    Int           @default(0)
+  attempts     Int           @default(0)
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
   outlet Outlet @relation(fields: [outletId], references: [id])
@@ -744,6 +746,60 @@ model Receipt {
   @@index([outletId])
   @@index([status])
   @@map("receipts")
+}
+
+enum PaymentStatus {
+  PENDING /// VA sudah dibuat, menunggu pembayaran customer
+  SETTLEMENT /// Pembayaran diterima & settled di bank
+  EXPIRED /// VA kadaluarsa sebelum dibayar
+  CANCELLED /// Dibatalkan merchant (contoh: ganti metode pembayaran)
+  FAILED /// Gagal diproses
+}
+
+model Payment {
+  id       String @id @default(cuid())
+  orderId  String @unique /// Satu order → satu payment aktif
+  outletId String
+
+  /// ID transaksi di Midtrans: format {orderNumber}-{timestamp}
+  /// Berbeda dari orderId POS agar bisa dibuat ulang saat ganti metode
+  midtransOrderId       String  @unique
+  midtransTransactionId String?
+
+  /// Metode pembayaran: saat ini hanya "bank_transfer"
+  paymentType String  @default("bank_transfer")
+  /// Bank: bca | bni | bri | permata | mandiri
+  bankName    String
+  /// Nomor Virtual Account yang diberikan ke customer
+  vaNumber    String?
+
+  grossAmount Decimal @db.Decimal(15, 2)
+
+  status PaymentStatus @default(PENDING)
+
+  // ── Timestamps dari Midtrans ─────────────────────────────────────────────
+  midtransTransactionTime DateTime?
+  midtransSettlementTime  DateTime?
+  midtransExpireTime      DateTime?
+
+  /// Payload notifikasi terakhir dari Midtrans (untuk audit & debugging)
+  rawNotification Json?
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  paidAt    DateTime?
+  expiredAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  outlet Outlet @relation(fields: [outletId], references: [id])
+
+  @@index([outletId])
+  @@index([status])
+  @@index([midtransOrderId])
+  @@index([midtransTransactionId])
+  @@map("payments")
 }
 
 // ─── Supplier & Purchase Order ────────────────────────────────────────────────
@@ -771,31 +827,31 @@ model Supplier {
 }
 
 enum PurchaseOrderStatus {
-  DRAFT      /// Baru dibuat, belum dikirim ke supplier
-  ORDERED    /// Sudah dipesan / dikirim ke supplier
-  PARTIAL    /// Sebagian barang sudah diterima
-  RECEIVED   /// Semua barang sudah diterima
-  CANCELLED  /// Dibatalkan
+  DRAFT /// Baru dibuat, belum dikirim ke supplier
+  ORDERED /// Sudah dipesan / dikirim ke supplier
+  PARTIAL /// Sebagian barang sudah diterima
+  RECEIVED /// Semua barang sudah diterima
+  CANCELLED /// Dibatalkan
 }
 
 model PurchaseOrder {
-  id            String              @id @default(cuid())
-  outletId      String
-  supplierId    String
-  orderNumber   String              /// Auto-generated: PO-YYYYMMDD-XXXX
-  status        PurchaseOrderStatus @default(DRAFT)
-  notes         String?
-  orderedAt     DateTime?           /// Tanggal PO dikirim ke supplier
-  expectedAt    DateTime?           /// Estimasi tanggal terima
-  receivedAt    DateTime?           /// Tanggal semua item diterima
-  totalAmount   Decimal             @default(0) @db.Decimal(15, 2)
-  createdById   String?             /// userId yang membuat
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  id          String              @id @default(cuid())
+  outletId    String
+  supplierId  String
+  orderNumber String /// Auto-generated: PO-YYYYMMDD-XXXX
+  status      PurchaseOrderStatus @default(DRAFT)
+  notes       String?
+  orderedAt   DateTime? /// Tanggal PO dikirim ke supplier
+  expectedAt  DateTime? /// Estimasi tanggal terima
+  receivedAt  DateTime? /// Tanggal semua item diterima
+  totalAmount Decimal             @default(0) @db.Decimal(15, 2)
+  createdById String? /// userId yang membuat
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
-  outlet    Outlet              @relation(fields: [outletId], references: [id])
-  supplier  Supplier            @relation(fields: [supplierId], references: [id])
-  items     PurchaseOrderItem[]
+  outlet   Outlet              @relation(fields: [outletId], references: [id])
+  supplier Supplier            @relation(fields: [supplierId], references: [id])
+  items    PurchaseOrderItem[]
 
   @@unique([orderNumber, outletId])
   @@index([outletId])
