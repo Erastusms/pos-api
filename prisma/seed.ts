@@ -1389,6 +1389,36 @@ async function main() {
     console.info('✅ Payments seeded: 3 payment (2 SETTLEMENT, 1 PENDING)')
   }
 
+  if (outlet) {
+    await prisma.customer.createMany({
+      data: [
+        {
+          outletId: outlet.id,
+          code: 'CUST-0001',
+          name: 'Budi Santoso',
+          email: 'budi@mail.com',
+          phone: '081234567890',
+          gender: 'MALE',
+          totalPoints: 120,
+          totalSpent: 1500000,
+          totalTransactions: 12,
+        },
+        {
+          outletId: outlet.id,
+          code: 'CUST-0002',
+          name: 'Siti Rahma',
+          email: 'siti@mail.com',
+          phone: '081222223333',
+          gender: 'FEMALE',
+          totalPoints: 80,
+          totalSpent: 870000,
+          totalTransactions: 7,
+        },
+      ],
+      skipDuplicates: true,
+    })
+  }
+
   console.info('\n🎉 Seed completed!\n')
   console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.info('  Login:')
