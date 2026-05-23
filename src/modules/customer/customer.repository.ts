@@ -1,4 +1,5 @@
 import { prisma } from '../../infrastructure/database/prisma.client'
+import type { CreateCustomerInput, UpdateCustomerInput } from './customer.schema'
 
 const customerSelect = {
   id: true,
@@ -50,14 +51,29 @@ export const customerRepository = {
     })
   },
 
-  create(data: any) {
+  create(data: CreateCustomerInput & { code: string; outletId: string }) {
     return prisma.customer.create({
-      data,
+      data: {
+        code: data.code,
+        outletId: data.outletId,
+        name: data.name,
+        email: data.email || null,
+        phone: data.phone || null,
+        gender: data.gender || null,
+        birthDate: data.birthDate ? new Date(data.birthDate) : null,
+        notes: data.notes || null,
+        totalPoints: 0,
+        totalSpent: 0,
+        totalTransactions: 0,
+        lastTransactionAt: null,
+        isMember: false,
+        isActive: true,
+      },
       select: customerSelect,
     })
   },
 
-  update(id: string, data: any) {
+  update(id: string, data: UpdateCustomerInput) {
     return prisma.customer.update({
       where: { id },
       data,
