@@ -1389,34 +1389,236 @@ async function main() {
     console.info('✅ Payments seeded: 3 payment (2 SETTLEMENT, 1 PENDING)')
   }
 
-  if (outlet) {
-    await prisma.customer.createMany({
-      data: [
-        {
-          outletId: outlet.id,
-          code: 'CUST-0001',
-          name: 'Budi Santoso',
-          email: 'budi@mail.com',
-          phone: '081234567890',
-          gender: 'MALE',
-          totalPoints: 120,
-          totalSpent: 1500000,
-          totalTransactions: 12,
-        },
-        {
-          outletId: outlet.id,
-          code: 'CUST-0002',
-          name: 'Siti Rahma',
-          email: 'siti@mail.com',
-          phone: '081222223333',
-          gender: 'FEMALE',
-          totalPoints: 80,
-          totalSpent: 870000,
-          totalTransactions: 7,
-        },
-      ],
-      skipDuplicates: true,
+  // ── Phase 4.1: Loyalty Program ────────────────────────────────────────────
+  {
+    await prisma.loyaltyProgram.upsert({
+      where: { outletId: outlet.id },
+      update: {},
+      create: {
+        outletId: outlet.id,
+        name: 'Poin Setia',
+        description: 'Kumpulkan poin dari setiap transaksi dan tukarkan dengan diskon belanja.',
+        isActive: true,
+        pointsPerRupiah: 1, // 1 poin per Rp 1
+        minimumSpend: 10000, // minimal transaksi Rp 10.000
+        pointValue: 100, // 1 poin = Rp 100
+        minimumRedeemPoints: 50, // minimal redeem 50 poin
+        pointExpiryDays: 365, // poin expired dalam 1 tahun
+      },
     })
+    console.info('✅ Loyalty Program seeded: "Poin Setia"')
+  }
+
+  // ── Phase 4.2: Sample Customers ───────────────────────────────────────────
+  {
+    const customers = [
+      {
+        id: 'seed-cust-001',
+        name: 'Andi Wijaya',
+        email: 'andi.wijaya@email.com',
+        phone: '081234567801',
+        birthDate: new Date('1990-03-15'),
+        address: 'Jl. Sudirman No. 10, Jakarta Pusat',
+        notes: 'Pelanggan VIP, suka kopi tanpa gula',
+        isActive: true,
+      },
+      {
+        id: 'seed-cust-002',
+        name: 'Sari Dewi',
+        email: 'sari.dewi@email.com',
+        phone: '081234567802',
+        birthDate: new Date('1995-08-22'),
+        address: 'Jl. Thamrin No. 5, Jakarta Pusat',
+        notes: 'Alergi susu sapi',
+        isActive: true,
+      },
+      {
+        id: 'seed-cust-003',
+        name: 'Budi Hartono',
+        email: 'budi.hartono@email.com',
+        phone: '081234567803',
+        birthDate: new Date('1985-12-01'),
+        isActive: true,
+      },
+      {
+        id: 'seed-cust-004',
+        name: 'Maya Sari',
+        phone: '081234567804',
+        birthDate: new Date('2000-06-17'),
+        isActive: true,
+      },
+      {
+        id: 'seed-cust-005',
+        name: 'Rizky Pratama',
+        email: 'rizky.pratama@email.com',
+        phone: '081234567805',
+        isActive: false,
+        notes: 'Akun dinonaktifkan atas permintaan customer',
+      },
+    ]
+
+    for (const cust of customers) {
+      await prisma.customer.upsert({
+        where: { id: cust.id },
+        update: {},
+        create: { ...cust, outletId: outlet.id },
+      })
+    }
+    console.info(`✅ Customers seeded: ${customers.length} customer (4 aktif, 1 nonaktif)`)
+  }
+
+  // ── Phase 4.3: Sample Loyalty Transactions ────────────────────────────────
+  {
+    // Helper: hitung expiry dari sekarang + 365 hari
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 365)
+
+    const loyaltyTxs = [
+      // ── Andi Wijaya (seed-cust-001) — punya banyak poin ──────────────────
+      {
+        id: 'seed-ltx-001',
+        customerId: 'seed-cust-001',
+        type: 'EARN' as const,
+        points: 780,
+        pointsBefore: 0,
+        pointsAfter: 780,
+        rupiah: 78000,
+        description: 'Poin dari transaksi TRX-20260101-0001',
+        orderId: 'seed-order-001',
+        expiresAt,
+      },
+      {
+        id: 'seed-ltx-002',
+        customerId: 'seed-cust-001',
+        type: 'EARN' as const,
+        points: 1000,
+        pointsBefore: 780,
+        pointsAfter: 1780,
+        rupiah: 100000,
+        description: 'Poin dari transaksi TRX-20260101-0002',
+        orderId: 'seed-order-002',
+        expiresAt,
+      },
+      {
+        id: 'seed-ltx-003',
+        customerId: 'seed-cust-001',
+        type: 'REDEEM' as const,
+        points: -200,
+        pointsBefore: 1780,
+        pointsAfter: 1580,
+        rupiah: 20000,
+        description: 'Redeem 200 poin = Rp 20.000',
+      },
+      {
+        id: 'seed-ltx-004',
+        customerId: 'seed-cust-001',
+        type: 'ADJUST' as const,
+        points: 100,
+        pointsBefore: 1580,
+        pointsAfter: 1680,
+        description: 'Penyesuaian manual — bonus ulang tahun',
+      },
+
+      // ── Sari Dewi (seed-cust-002) — poin moderat ─────────────────────────
+      {
+        id: 'seed-ltx-005',
+        customerId: 'seed-cust-002',
+        type: 'EARN' as const,
+        points: 390,
+        pointsBefore: 0,
+        pointsAfter: 390,
+        rupiah: 39000,
+        description: 'Poin pertama dari transaksi',
+        expiresAt,
+      },
+      {
+        id: 'seed-ltx-006',
+        customerId: 'seed-cust-002',
+        type: 'REDEEM' as const,
+        points: -100,
+        pointsBefore: 390,
+        pointsAfter: 290,
+        rupiah: 10000,
+        description: 'Redeem 100 poin = Rp 10.000',
+      },
+
+      // ── Budi Hartono (seed-cust-003) — baru bergabung ────────────────────
+      {
+        id: 'seed-ltx-007',
+        customerId: 'seed-cust-003',
+        type: 'EARN' as const,
+        points: 700,
+        pointsBefore: 0,
+        pointsAfter: 700,
+        rupiah: 70000,
+        description: 'Poin dari transaksi perdana',
+        expiresAt,
+      },
+
+      // ── Maya Sari (seed-cust-004) — poin expired simulation ───────────────
+      {
+        id: 'seed-ltx-008',
+        customerId: 'seed-cust-004',
+        type: 'EARN' as const,
+        points: 500,
+        pointsBefore: 0,
+        pointsAfter: 500,
+        rupiah: 50000,
+        description: 'Poin dari transaksi lama',
+        expiresAt: new Date('2025-01-01'), // sudah expired
+      },
+      {
+        id: 'seed-ltx-009',
+        customerId: 'seed-cust-004',
+        type: 'EXPIRE' as const,
+        points: -500,
+        pointsBefore: 500,
+        pointsAfter: 0,
+        description: 'Poin expired otomatis',
+      },
+    ]
+
+    for (const tx of loyaltyTxs) {
+      const { orderId, expiresAt: ea, ...rest } = tx
+      await prisma.loyaltyTransaction.upsert({
+        where: { id: tx.id },
+        update: {},
+        create: {
+          ...rest,
+          outletId: outlet.id,
+          ...(orderId ? { orderId } : {}),
+          ...(ea ? { expiresAt: ea } : {}),
+        },
+      })
+    }
+
+    console.info(`✅ Loyalty Transactions seeded: ${loyaltyTxs.length} transaksi poin`)
+    console.info('   Saldo poin:')
+    console.info('     Andi Wijaya  : 1.680 poin')
+    console.info('     Sari Dewi    :   290 poin')
+    console.info('     Budi Hartono :   700 poin')
+    console.info('     Maya Sari    :     0 poin (expired)')
+    console.info('     Rizky Pratama:     0 poin (nonaktif)')
+  }
+
+  // ── Phase 4.4: Link sample orders ke customers ────────────────────────────
+  {
+    // seed-order-001 → Andi Wijaya
+    await prisma.order.updateMany({
+      where: { id: 'seed-order-001' },
+      data: { customerId: 'seed-cust-001' },
+    })
+    // seed-order-002 → Andi Wijaya
+    await prisma.order.updateMany({
+      where: { id: 'seed-order-002' },
+      data: { customerId: 'seed-cust-001' },
+    })
+    // seed-order-004 → Sari Dewi
+    await prisma.order.updateMany({
+      where: { id: 'seed-order-004' },
+      data: { customerId: 'seed-cust-002' },
+    })
+    console.info('✅ Sample orders linked ke customers')
   }
 
   console.info('\n🎉 Seed completed!\n')

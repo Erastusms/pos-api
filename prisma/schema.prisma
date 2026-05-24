@@ -88,21 +88,23 @@ model Outlet {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  users          User[]
-  categories     Category[]
-  products       Product[]
-  inventoryItems InventoryItem[]
-  employees      Employee[]
-  settings       OutletSettings?
-  businessHours  OutletBusinessHour[]
-  suppliers      Supplier[]
-  purchaseOrders PurchaseOrder[]
-  carts          Cart[]
-  discounts      Discount[]
-  orders         Order[]
-  receipts       Receipt[]
-  payments       Payment[]
-  customers      Customer[]
+  users               User[]
+  categories          Category[]
+  products            Product[]
+  inventoryItems      InventoryItem[]
+  employees           Employee[]
+  settings            OutletSettings?
+  businessHours       OutletBusinessHour[]
+  suppliers           Supplier[]
+  purchaseOrders      PurchaseOrder[]
+  carts               Cart[]
+  discounts           Discount[]
+  orders              Order[]
+  receipts            Receipt[]
+  payments            Payment[]
+  customers           Customer[]
+  loyaltyProgram      LoyaltyProgram?
+  loyaltyTransactions LoyaltyTransaction[]
 
   @@map("outlets")
 }
@@ -657,9 +659,8 @@ model Order {
   receipt  Receipt?
   payment  Payment?
 
-  customerId               String?
-  customer                 Customer?                @relation(fields: [customerId], references: [id])
-  customerLoyaltyHistories CustomerLoyaltyHistory[]
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@unique([orderNumber, outletId])
   @@index([outletId, status])
@@ -886,63 +887,107 @@ model PurchaseOrderItem {
   @@map("purchase_order_items")
 }
 
-// ─── Customer & Loyalty ──────────────────────────────────────────────────────
+// ─── Customer ─────────────────────────────────────────────────────────────────
 
 model Customer {
-  id                String    @id @default(cuid())
-  outletId          String
-  code              String
-  name              String
-  email             String?
-  phone             String?
-  gender            String?
-  birthDate         DateTime? @db.Date
-  notes             String?
-  totalPoints       Int       @default(0)
-  totalSpent        Decimal   @default(0) @db.Decimal(15, 2)
-  totalTransactions Int       @default(0)
-  lastTransactionAt DateTime?
-  isMember          Boolean   @default(true)
-  isActive          Boolean   @default(true)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  deletedAt         DateTime?
+  id        String    @id @default(cuid())
+  outletId  String
+  name      String
+  email     String?
+  phone     String?
+  /// Tanggal lahir — digunakan untuk birthday promo
+  birthDate DateTime? @db.Date
+  address   String?
+  notes     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
-  outlet           Outlet                   @relation(fields: [outletId], references: [id])
-  orders           Order[]
-  loyaltyHistories CustomerLoyaltyHistory[]
+  outlet              Outlet               @relation(fields: [outletId], references: [id])
+  orders              Order[]
+  loyaltyTransactions LoyaltyTransaction[]
 
-  @@unique([code, outletId])
+  @@unique([phone, outletId])
+  @@unique([email, outletId])
   @@index([outletId])
-  @@index([phone])
-  @@index([email])
   @@index([isActive])
   @@map("customers")
 }
 
-model CustomerLoyaltyHistory {
-  id            String           @id @default(cuid())
-  customerId    String
-  orderId       String?
-  type          LoyaltyPointType
-  points        Int
-  balanceBefore Int
-  balanceAfter  Int
-  description   String?
-  createdAt     DateTime         @default(now())
+// ─── Loyalty Program ──────────────────────────────────────────────────────────
 
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  order    Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+/// Konfigurasi program poin per outlet — satu baris per outlet.
+model LoyaltyProgram {
+  id       String @id @default(cuid())
+  outletId String @unique
 
-  @@index([customerId])
-  @@index([orderId])
-  @@index([type])
-  @@map("customer_loyalty_histories")
+  name        String  @default("Program Loyalitas")
+  description String?
+  isActive    Boolean @default(true)
+
+  /// Berapa poin yang diberikan per Rp spent
+  /// Contoh: pointsPerRupiah = 1, minimumSpend = 10000
+  /// → setiap transaksi Rp 10.000 dapat 1 poin
+  pointsPerRupiah Decimal @default(1) @db.Decimal(10, 4)
+  minimumSpend    Decimal @default(10000) @db.Decimal(15, 2)
+
+  /// 1 poin = berapa rupiah saat redeem
+  pointValue Decimal @default(100) @db.Decimal(10, 4)
+
+  /// Berapa poin minimum untuk bisa redeem
+  minimumRedeemPoints Int @default(100)
+
+  /// Expiry poin dalam hari (0 = tidak expired)
+  pointExpiryDays Int @default(365)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outlet Outlet @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@map("loyalty_programs")
 }
 
-enum LoyaltyPointType {
-  EARN
-  REDEEM
-  ADJUSTMENT
-  EXPIRED
+// ─── Loyalty Transaction ──────────────────────────────────────────────────────
+
+enum LoyaltyTransactionType {
+  EARN /// Poin diperoleh dari transaksi
+  REDEEM /// Poin digunakan untuk bayar
+  EXPIRE /// Poin expired (batch job)
+  ADJUST /// Penyesuaian manual oleh admin
+  REFUND /// Poin dikembalikan karena order di-void
+}
+
+model LoyaltyTransaction {
+  id         String                 @id @default(cuid())
+  customerId String
+  outletId   String
+  orderId    String?
+  type       LoyaltyTransactionType
+
+  /// Poin yang berubah — positif = masuk, negatif = keluar
+  points       Int
+  pointsBefore Int
+  pointsAfter  Int
+
+  /// Nilai rupiah yang terkait (untuk EARN: nominal transaksi; REDEEM: nilai rupiah poin)
+  rupiah Decimal? @db.Decimal(15, 2)
+
+  description String?
+  /// Tanggal poin akan expired (untuk type=EARN)
+  expiresAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  outlet   Outlet   @relation(fields: [outletId], references: [id])
+
+  @@index([customerId])
+  @@index([outletId])
+  @@index([orderId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@map("loyalty_transactions")
 }

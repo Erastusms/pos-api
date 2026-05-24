@@ -20,6 +20,7 @@ import { productRoutes } from '../modules/product/product.routes'
 import { outletRoutes } from '../modules/outlet/outlet.routes'
 import { supplierRoutes } from '../modules/supplier/supplier.routes'
 import { paymentRoutes } from '../modules/payment/payment.routes'
+import { customerRoutes } from '../modules/customer/customer.routes'
 
 export async function buildApp() {
   const app = Fastify({
@@ -104,6 +105,8 @@ export async function buildApp() {
         { name: 'Order', description: 'Lifecycle order: PENDING → PAID → DONE / VOID' },
         { name: 'Receipt', description: 'Generate struk PDF via async queue (BullMQ)' },
         { name: 'Payment', description: 'Pembayaran via Midtrans Bank Transfer (Virtual Account)' },
+        { name: 'Customer', description: 'Manajemen data customer & CRM' },
+        { name: 'Loyalty', description: 'Program poin loyalitas customer' },
       ],
     },
   })
@@ -129,6 +132,7 @@ export async function buildApp() {
   await app.register(orderRoutes, { prefix: '/api/v1/orders' })
   await app.register(receiptRoutes, { prefix: '/api/v1/orders/:orderId/receipt' })
   await app.register(paymentRoutes, { prefix: '/api/v1/payments' })
+  await app.register(customerRoutes, { prefix: '/api/v1/customers' })
 
   // ── Background workers ────────────────────────────────────────────────────
   if (env.NODE_ENV !== 'test') {

@@ -6,6 +6,7 @@ import type { CreateOrderInput, VoidOrderInput, ListOrderQuery } from './order.s
 import { NotFoundError, BadRequestError, ConflictError } from '../../shared/errors'
 import type { RawTaxSettings } from '../../shared/utils/tax.engine'
 import type { DiscountDef } from '../../shared/utils/discount.engine'
+import { customerService } from '../customer/customer.service'
 
 // ─── Role IDs yang boleh void order PAID ──────────────────────────────────────
 // 1=Super Admin, 2=Owner, 3=Manager
@@ -16,7 +17,7 @@ const VOID_PAID_ALLOWED_ROLES = new Set([1, 2, 3])
 /** Ambil OutletSettings untuk tax engine */
 async function getOutletSettings(outletId: string): Promise<RawTaxSettings | null> {
   return prisma.outletSettings.findUnique({
-    where:  { outletId },
+    where: { outletId },
     select: { taxRate: true, serviceCharge: true, rounding: true, roundingValue: true },
   })
 }
@@ -26,25 +27,31 @@ async function getDiscountDef(discountId: string | null | undefined): Promise<Di
   if (!discountId) return null
 
   const d = await prisma.discount.findFirst({
-    where:  { id: discountId, deletedAt: null },
+    where: { id: discountId, deletedAt: null },
     select: {
-      id: true, name: true, code: true, type: true, scope: true,
-      value: true, minPurchase: true, maxDiscount: true,
+      id: true,
+      name: true,
+      code: true,
+      type: true,
+      scope: true,
+      value: true,
+      minPurchase: true,
+      maxDiscount: true,
       products: { select: { productId: true } },
     },
   })
   if (!d) return null
 
   return {
-    id:          d.id,
-    name:        d.name,
-    code:        d.code,
-    type:        d.type as 'PERCENTAGE' | 'FIXED_AMOUNT',
-    scope:       d.scope as 'PER_ITEM' | 'PER_BILL',
-    value:       Number(d.value),
-    minPurchase: d.minPurchase != null ? Number(d.minPurchase) : null,
-    maxDiscount: d.maxDiscount != null ? Number(d.maxDiscount) : null,
-    productIds:  d.products.map((p: { productId: string }) => p.productId),
+    id: d.id,
+    name: d.name,
+    code: d.code,
+    type: d.type as 'PERCENTAGE' | 'FIXED_AMOUNT',
+    scope: d.scope as 'PER_ITEM' | 'PER_BILL',
+    value: Number(d.value),
+    minPurchase: d.minPurchase !== null ? Number(d.minPurchase) : null,
+    maxDiscount: d.maxDiscount !== null ? Number(d.maxDiscount) : null,
+    productIds: d.products.map((p: { productId: string }) => p.productId),
   }
 }
 
@@ -57,23 +64,23 @@ async function getDiscountDef(discountId: string | null | undefined): Promise<Di
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function deductInventory(
-  productId:   string,
-  outletId:    string,
-  quantity:    number,
+  productId: string,
+  outletId: string,
+  quantity: number,
   orderNumber: string,
-  userId:      string,
+  userId: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
 ): Promise<void> {
   const inventoryItem = await tx.inventoryItem.findUnique({
-    where:  { productId },
+    where: { productId },
     select: { id: true, quantity: true, outletId: true },
   })
 
   if (!inventoryItem || inventoryItem.outletId !== outletId) return
 
   const currentQty = Number(inventoryItem.quantity)
-  const newQty     = currentQty - quantity
+  const newQty = currentQty - quantity
 
   if (newQty < 0) {
     throw new BadRequestError(
@@ -84,7 +91,7 @@ async function deductInventory(
 
   // Konsumsi FIFO cost layers
   const layers = await tx.inventoryCostLayer.findMany({
-    where:   { inventoryItemId: inventoryItem.id, quantityLeft: { gt: 0 } },
+    where: { inventoryItemId: inventoryItem.id, quantityLeft: { gt: 0 } },
     orderBy: { createdAt: 'asc' },
   })
 
@@ -94,12 +101,12 @@ async function deductInventory(
   for (const layer of layers) {
     if (remaining <= 0) break
     const layerLeft = Number(layer.quantityLeft)
-    const consume   = Math.min(layerLeft, remaining)
-    totalCost  += consume * Number(layer.costPerUnit)
-    remaining  -= consume
+    const consume = Math.min(layerLeft, remaining)
+    totalCost += consume * Number(layer.costPerUnit)
+    remaining -= consume
     await tx.inventoryCostLayer.update({
       where: { id: layer.id },
-      data:  { quantityLeft: layerLeft - consume },
+      data: { quantityLeft: layerLeft - consume },
     })
   }
 
@@ -108,20 +115,20 @@ async function deductInventory(
   // Update quantity
   await tx.inventoryItem.update({
     where: { id: inventoryItem.id },
-    data:  { quantity: newQty, updatedAt: new Date() },
+    data: { quantity: newQty, updatedAt: new Date() },
   })
 
   // Catat adjustment log
   await tx.inventoryAdjustment.create({
     data: {
       inventoryItemId: inventoryItem.id,
-      type:            'SALE_OUT',
-      quantity:        -quantity,
-      quantityBefore:  currentQty,
-      quantityAfter:   newQty,
-      costPerUnit:     avgCost,
-      totalCost:       totalCost,
-      reference:       orderNumber,
+      type: 'SALE_OUT',
+      quantity: -quantity,
+      quantityBefore: currentQty,
+      quantityAfter: newQty,
+      costPerUnit: avgCost,
+      totalCost: totalCost,
+      reference: orderNumber,
       userId,
     },
   })
@@ -133,52 +140,52 @@ async function deductInventory(
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function restoreInventory(
-  productId:   string,
-  outletId:    string,
-  quantity:    number,
-  unitCost:    number,
+  productId: string,
+  outletId: string,
+  quantity: number,
+  unitCost: number,
   orderNumber: string,
-  userId:      string,
+  userId: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
 ): Promise<void> {
   const inventoryItem = await tx.inventoryItem.findUnique({
-    where:  { productId },
+    where: { productId },
     select: { id: true, quantity: true, outletId: true },
   })
 
   if (!inventoryItem || inventoryItem.outletId !== outletId) return
 
   const currentQty = Number(inventoryItem.quantity)
-  const newQty     = currentQty + quantity
+  const newQty = currentQty + quantity
 
   // Buat cost layer baru (RETURN_IN — barang kembali masuk)
   await tx.inventoryCostLayer.create({
     data: {
       inventoryItemId: inventoryItem.id,
-      quantityIn:      quantity,
-      quantityLeft:    quantity,
-      costPerUnit:     unitCost,
+      quantityIn: quantity,
+      quantityLeft: quantity,
+      costPerUnit: unitCost,
     },
   })
 
   await tx.inventoryItem.update({
     where: { id: inventoryItem.id },
-    data:  { quantity: newQty, updatedAt: new Date() },
+    data: { quantity: newQty, updatedAt: new Date() },
   })
 
   await tx.inventoryAdjustment.create({
     data: {
       inventoryItemId: inventoryItem.id,
-      type:            'RETURN_IN',
+      type: 'RETURN_IN',
       quantity,
-      quantityBefore:  currentQty,
-      quantityAfter:   newQty,
-      costPerUnit:     unitCost,
-      totalCost:       quantity * unitCost,
-      reference:       orderNumber,
+      quantityBefore: currentQty,
+      quantityAfter: newQty,
+      costPerUnit: unitCost,
+      totalCost: quantity * unitCost,
+      reference: orderNumber,
       userId,
-      notes:           'Stok dikembalikan karena order di-void',
+      notes: 'Stok dikembalikan karena order di-void',
     },
   })
 }
@@ -186,7 +193,6 @@ async function restoreInventory(
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export const orderService = {
-
   /**
    * List order dengan filter + pagination.
    */
@@ -228,27 +234,27 @@ export const orderService = {
 
     // ── 2. Fetch cart dengan semua data yang dibutuhkan ─────────────────────
     const cart = await prisma.cart.findUnique({
-      where:  { id: cartId },
+      where: { id: cartId },
       select: {
-        id:         true,
-        status:     true,
-        outletId:   true,
-        userId:     true,
+        id: true,
+        status: true,
+        outletId: true,
+        userId: true,
         discountId: true,
         items: {
           select: {
-            id:        true,
-            cartId:    true,
+            id: true,
+            cartId: true,
             productId: true,
             variantId: true,
-            quantity:  true,
+            quantity: true,
             unitPrice: true,
-            notes:     true,
+            notes: true,
             product: {
               select: {
-                id:   true,
+                id: true,
                 name: true,
-                sku:  true,
+                sku: true,
               },
             },
             variant: {
@@ -264,7 +270,7 @@ export const orderService = {
       },
     })
 
-    if (!cart)             throw new NotFoundError('Cart', 'CART_NOT_FOUND')
+    if (!cart) throw new NotFoundError('Cart', 'CART_NOT_FOUND')
     if (cart.outletId !== outletId) {
       throw new NotFoundError('Cart', 'CART_NOT_FOUND')
     }
@@ -291,7 +297,7 @@ export const orderService = {
       // updateMany mengembalikan { count: number }
       const lockResult = await tx.cart.updateMany({
         where: { id: cartId, status: 'ACTIVE' },
-        data:  { status: 'CHECKED_OUT', updatedAt: new Date() },
+        data: { status: 'CHECKED_OUT', updatedAt: new Date() },
       })
 
       if (lockResult.count === 0) {
@@ -309,23 +315,23 @@ export const orderService = {
           outletId,
           userId,
           cartId,
-          discountId:  cart.discountId ?? undefined,
-          notes:       notes ?? cart.id, // notes dari input, fallback ke cartId
-          status:      'PENDING',
+          discountId: cart.discountId ?? undefined,
+          notes: notes ?? cart.id, // notes dari input, fallback ke cartId
+          status: 'PENDING',
 
           // Financial snapshot
-          subtotal:            summary.subtotal,
-          discountAmount:      summary.discountAmount,
-          discountedSubtotal:  summary.discountedSubtotal,
+          subtotal: summary.subtotal,
+          discountAmount: summary.discountAmount,
+          discountedSubtotal: summary.discountedSubtotal,
           serviceChargeAmount: summary.serviceChargeAmount,
-          taxAmount:           summary.taxAmount,
-          roundingAmount:      summary.roundingAmount,
-          total:               summary.total,
+          taxAmount: summary.taxAmount,
+          roundingAmount: summary.roundingAmount,
+          total: summary.total,
 
           // Discount snapshot
-          discountName:  discountDef?.name  ?? null,
-          discountCode:  discountDef?.code  ?? null,
-          discountType:  discountDef?.type  ?? null,
+          discountName: discountDef?.name ?? null,
+          discountCode: discountDef?.code ?? null,
+          discountType: discountDef?.type ?? null,
           discountScope: discountDef?.scope ?? null,
           discountValue: discountDef?.value ?? null,
 
@@ -335,30 +341,32 @@ export const orderService = {
             create: (cart.items as any[]).map((item: any) => {
               // Hitung lineTotal item (sama seperti di cart engine)
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const modSum    = item.modifiers.reduce((acc: number, m: any) => acc + Number(m.price), 0)
+              const modSum = item.modifiers.reduce(
+                (acc: number, m: any) => acc + Number(m.price),
+                0,
+              )
               const lineTotal = (Number(item.unitPrice) + modSum) * Number(item.quantity)
 
               // Per-item discount amount dari engine
-              const itemDiscountAmount =
-                summary.itemDiscountMap?.[item.productId as string] ?? 0
+              const itemDiscountAmount = summary.itemDiscountMap?.[item.productId as string] ?? 0
 
               return {
-                productId:          item.productId,
-                variantId:          item.variantId,
-                productName:        item.product?.name ?? '(Produk dihapus)',
-                productSku:         item.product?.sku  ?? '-',
-                variantName:        item.variant?.name ?? null,
-                quantity:           Number(item.quantity),
-                unitPrice:          Number(item.unitPrice),
+                productId: item.productId,
+                variantId: item.variantId,
+                productName: item.product?.name ?? '(Produk dihapus)',
+                productSku: item.product?.sku ?? '-',
+                variantName: item.variant?.name ?? null,
+                quantity: Number(item.quantity),
+                unitPrice: Number(item.unitPrice),
                 itemDiscountAmount,
-                lineTotal:          Math.round(lineTotal * 100) / 100,
-                notes:              item.notes,
+                lineTotal: Math.round(lineTotal * 100) / 100,
+                notes: item.notes,
                 modifiers: {
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   create: item.modifiers.map((m: any) => ({
                     modifierId: m.modifierId,
-                    name:       m.name,
-                    price:      Number(m.price),
+                    name: m.name,
+                    price: Number(m.price),
                   })),
                 },
               }
@@ -366,9 +374,9 @@ export const orderService = {
           },
         },
         select: {
-          id:         true,
+          id: true,
           orderNumber: true,
-          items:      { select: { productId: true, quantity: true, unitPrice: true } },
+          items: { select: { productId: true, quantity: true, unitPrice: true } },
         },
       })
 
@@ -422,10 +430,15 @@ export const orderService = {
     const updated = await withTransaction(async (tx) => {
       // Re-check status di dalam tx (anti-race condition)
       const current = await tx.order.findUnique({
-        where:  { id },
-        select: { status: true, orderNumber: true, outletId: true, items: {
-          select: { productId: true, quantity: true, unitPrice: true },
-        }},
+        where: { id },
+        select: {
+          status: true,
+          orderNumber: true,
+          outletId: true,
+          items: {
+            select: { productId: true, quantity: true, unitPrice: true },
+          },
+        },
       })
 
       if (!current || current.status === 'VOID') {
@@ -437,11 +450,11 @@ export const orderService = {
 
       // Update status → VOID
       const voided = await tx.order.update({
-        where:  { id },
+        where: { id },
         data: {
-          status:    'VOID',
+          status: 'VOID',
           voidReason: input.reason,
-          voidedAt:  new Date(),
+          voidedAt: new Date(),
           voidedById: userId,
           updatedAt: new Date(),
         },
@@ -460,6 +473,38 @@ export const orderService = {
           userId,
           tx,
         )
+      }
+
+      // ── PATCH: Refund poin jika ada loyalty earn untuk order ini ──────────
+      // Cari loyalty transaction EARN untuk order ini
+      const { prisma: prismaClient } = await import('../../infrastructure/database/prisma.client')
+      const earnTx = await prismaClient.loyaltyTransaction.findFirst({
+        where: { orderId: id, type: 'EARN' },
+        select: { id: true, customerId: true, outletId: true, points: true },
+      })
+
+      if (earnTx) {
+        const currentBalance = await prismaClient.loyaltyTransaction.aggregate({
+          where: { customerId: earnTx.customerId },
+          _sum: { points: true },
+        })
+        const balance = Math.max(0, currentBalance._sum.points ?? 0)
+        const refundPoints = Math.min(earnTx.points, balance) // tidak refund lebih dari saldo
+
+        if (refundPoints > 0) {
+          await prismaClient.loyaltyTransaction.create({
+            data: {
+              customerId: earnTx.customerId,
+              outletId: earnTx.outletId,
+              orderId: id,
+              type: 'REFUND',
+              points: -refundPoints,
+              pointsBefore: balance,
+              pointsAfter: balance - refundPoints,
+              description: `Refund poin dari order ${current.orderNumber} yang di-void`,
+            },
+          })
+        }
       }
 
       return voided
@@ -485,7 +530,7 @@ export const orderService = {
     }
 
     const updated = await orderRepository.update(id, {
-      status:      'DONE',
+      status: 'DONE',
       completedAt: new Date(),
     })
     return normalizeOrder(updated)
@@ -493,8 +538,8 @@ export const orderService = {
 
   /**
    * Tandai order PENDING → PAID.
-   * Akan dipanggil oleh Payment module — disediakan agar
-   * Payment module tidak perlu menyentuh order repository langsung.
+   * Dipanggil oleh Payment module setelah konfirmasi settlement.
+   * PATCH: Setelah PAID, otomatis earn poin jika order punya customerId.
    */
   async markPaid(id: string, paidAt?: Date) {
     const order = await orderRepository.findById(id)
@@ -511,6 +556,34 @@ export const orderService = {
       status: 'PAID',
       paidAt: paidAt ?? new Date(),
     })
+
+    // ── PATCH: Earn loyalty points jika ada customer terkait ───────────────
+    // Jalankan async tanpa await agar tidak menunda response payment
+    // Error di sini tidak boleh menggagalkan flow pembayaran
+    const orderWithCustomer = await import('../../infrastructure/database/prisma.client')
+      .then(({ prisma }) =>
+        prisma.order.findUnique({
+          where: { id },
+          select: { customerId: true, outletId: true, total: true },
+        }),
+      )
+      .catch(() => null)
+
+    if (orderWithCustomer?.customerId) {
+      customerService
+        .earnPoints(
+          orderWithCustomer.customerId,
+          orderWithCustomer.outletId,
+          id,
+          Number(orderWithCustomer.total),
+        )
+        .catch((err: Error) => {
+          // Log tapi jangan crash — earn poin bukan bagian kritis payment
+          console.warn(`⚠️  Gagal earn poin untuk order ${id}:`, err.message)
+        })
+    }
+    // ── END PATCH ──────────────────────────────────────────────────────────
+
     return normalizeOrder(updated)
   },
 }
