@@ -105,6 +105,8 @@ model Outlet {
   customers           Customer[]
   loyaltyProgram      LoyaltyProgram?
   loyaltyTransactions LoyaltyTransaction[]
+  vouchers            Voucher[]
+  voucherRedemptions  VoucherRedemption[]
 
   @@map("outlets")
 }
@@ -269,6 +271,7 @@ model Product {
   cartItems          CartItem[]
   discountProducts   DiscountProduct[]
   orderItems         OrderItem[]
+  voucherProducts    VoucherProduct[]
 
   @@unique([sku, outletId])
   @@index([categoryId])
@@ -551,14 +554,17 @@ model Cart {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
-  outlet   Outlet     @relation(fields: [outletId], references: [id])
-  user     User       @relation(fields: [userId], references: [id])
-  discount Discount?  @relation(fields: [discountId], references: [id], onDelete: SetNull)
-  items    CartItem[]
-  order    Order?
+  outlet    Outlet     @relation(fields: [outletId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+  discount  Discount?  @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  items     CartItem[]
+  order     Order?
+  voucher   Voucher?   @relation(fields: [voucherId], references: [id], onDelete: SetNull)
+  voucherId String?
 
   @@index([outletId, userId, status])
   @@index([userId])
+  @@index([voucherId])
   @@map("carts")
 }
 
@@ -586,16 +592,15 @@ model CartItem {
 }
 
 model CartItemModifier {
-  id         String  @id @default(cuid())
+  id         String          @id @default(cuid())
   cartItemId String
   modifierId String
   /// Snapshot nama modifier saat ditambahkan
   name       String
   /// Snapshot harga modifier saat ditambahkan
-  price      Decimal @db.Decimal(15, 2)
-
-  cartItem CartItem        @relation(fields: [cartItemId], references: [id], onDelete: Cascade)
-  modifier ProductModifier @relation(fields: [modifierId], references: [id])
+  price      Decimal         @db.Decimal(15, 2)
+  cartItem   CartItem        @relation(fields: [cartItemId], references: [id], onDelete: Cascade)
+  modifier   ProductModifier @relation(fields: [modifierId], references: [id])
 
   @@index([cartItemId])
   @@map("cart_item_modifiers")
@@ -611,91 +616,89 @@ enum OrderStatus {
 }
 
 model Order {
-  id          String  @id @default(cuid())
+  id                    String      @id @default(cuid())
   /// Format: TRX-YYYYMMDD-XXXX — auto-generated, unik per outlet per hari
-  orderNumber String
-  outletId    String
+  orderNumber           String
+  outletId              String
   /// Kasir yang membuat order
-  userId      String
+  userId                String
   /// Cart asal — UNIQUE: satu cart hanya bisa di-checkout sekali
-  cartId      String? @unique
+  cartId                String?     @unique
   /// FK ke Discount (untuk audit, nullable jika diskon dihapus)
-  discountId  String?
-
-  status OrderStatus @default(PENDING)
-  notes  String?
-
+  discountId            String?
+  status                OrderStatus @default(PENDING)
+  notes                 String?
   // ── Financial snapshot (immutable setelah order dibuat) ───────────────────
-  subtotal            Decimal @db.Decimal(15, 2)
-  discountAmount      Decimal @default(0) @db.Decimal(15, 2)
-  discountedSubtotal  Decimal @db.Decimal(15, 2)
-  serviceChargeAmount Decimal @default(0) @db.Decimal(15, 2)
-  taxAmount           Decimal @default(0) @db.Decimal(15, 2)
-  roundingAmount      Decimal @default(0) @db.Decimal(15, 2)
-  total               Decimal @db.Decimal(15, 2)
-
+  subtotal              Decimal     @db.Decimal(15, 2)
+  discountAmount        Decimal     @default(0) @db.Decimal(15, 2)
+  discountedSubtotal    Decimal     @db.Decimal(15, 2)
+  serviceChargeAmount   Decimal     @default(0) @db.Decimal(15, 2)
+  taxAmount             Decimal     @default(0) @db.Decimal(15, 2)
+  roundingAmount        Decimal     @default(0) @db.Decimal(15, 2)
+  total                 Decimal     @db.Decimal(15, 2)
   // ── Discount snapshot (readable meski diskon dihapus) ────────────────────
-  discountName  String?
-  discountCode  String?
-  discountType  String? /// 'PERCENTAGE' | 'FIXED_AMOUNT'
-  discountScope String? /// 'PER_ITEM' | 'PER_BILL'
-  discountValue Decimal? @db.Decimal(10, 2)
-
+  discountName          String?
+  discountCode          String?
+  discountType          String? /// 'PERCENTAGE' | 'FIXED_AMOUNT'
+  discountScope         String? /// 'PER_ITEM' | 'PER_BILL'
+  discountValue         Decimal?    @db.Decimal(10, 2)
+  // ── Voucher ──────────────────────────────────────────────────
+  voucherId             String?
+  voucherCode           String? // snapshot kode saat order dibuat
+  voucherName           String? // snapshot nama voucher
+  voucherType           String? // snapshot 'PERCENTAGE' | 'FIXED_AMOUNT'
+  voucherScope          String? // snapshot 'PER_BILL' | 'PER_ITEM'
+  voucherValue          Decimal?    @db.Decimal(10, 2)
+  voucherDiscountAmount Decimal     @default(0) @db.Decimal(15, 2)
+  voucher               Voucher?    @relation(fields: [voucherId], references: [id], onDelete: SetNull)
   // ── Lifecycle timestamps ──────────────────────────────────────────────────
-  paidAt      DateTime?
-  completedAt DateTime?
-  voidedAt    DateTime?
-  voidReason  String?
-  voidedById  String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  outlet   Outlet      @relation(fields: [outletId], references: [id])
-  user     User        @relation(fields: [userId], references: [id])
-  cart     Cart?       @relation(fields: [cartId], references: [id], onDelete: SetNull)
-  discount Discount?   @relation(fields: [discountId], references: [id], onDelete: SetNull)
-  items    OrderItem[]
-  receipt  Receipt?
-  payment  Payment?
-
-  customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  paidAt                DateTime?
+  completedAt           DateTime?
+  voidedAt              DateTime?
+  voidReason            String?
+  voidedById            String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  outlet                Outlet      @relation(fields: [outletId], references: [id])
+  user                  User        @relation(fields: [userId], references: [id])
+  cart                  Cart?       @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  discount              Discount?   @relation(fields: [discountId], references: [id], onDelete: SetNull)
+  items                 OrderItem[]
+  receipt               Receipt?
+  payment               Payment?
+  customerId            String?
+  customer              Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
   @@unique([orderNumber, outletId])
   @@index([outletId, status])
   @@index([outletId, createdAt])
   @@index([userId])
   @@index([customerId])
+  @@index([voucherId])
   @@map("orders")
 }
 
 model OrderItem {
-  id      String @id @default(cuid())
-  orderId String
-
+  id                 String              @id @default(cuid())
+  orderId            String
   /// FK nullable — produk mungkin soft-deleted di kemudian hari
-  productId String?
-  variantId String?
-
+  productId          String?
+  variantId          String?
   // ── Product snapshot (immutable) ─────────────────────────────────────────
-  productName String
-  productSku  String
-  variantName String?
-
-  quantity           Decimal @db.Decimal(10, 3)
-  unitPrice          Decimal @db.Decimal(15, 2)
+  productName        String
+  productSku         String
+  variantName        String?
+  quantity           Decimal             @db.Decimal(10, 3)
+  unitPrice          Decimal             @db.Decimal(15, 2)
   /// Diskon per-item dari PER_ITEM discount (jika berlaku)
-  itemDiscountAmount Decimal @default(0) @db.Decimal(15, 2)
+  itemDiscountAmount Decimal             @default(0) @db.Decimal(15, 2)
   /// lineTotal = (unitPrice + Σ modifierPrice) × qty — tidak termasuk diskon item level
-  lineTotal          Decimal @db.Decimal(15, 2)
+  lineTotal          Decimal             @db.Decimal(15, 2)
   notes              String?
-
-  createdAt DateTime @default(now())
-
-  order     Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
-  modifiers OrderItemModifier[]
+  createdAt          DateTime            @default(now())
+  order              Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product            Product?            @relation(fields: [productId], references: [id], onDelete: SetNull)
+  modifiers          OrderItemModifier[]
 
   @@index([orderId])
   @@index([productId])
@@ -703,18 +706,15 @@ model OrderItem {
 }
 
 model OrderItemModifier {
-  id          String @id @default(cuid())
+  id          String           @id @default(cuid())
   orderItemId String
-
   /// FK nullable — modifier mungkin soft-deleted di kemudian hari
-  modifierId String?
-
+  modifierId  String?
   // ── Modifier snapshot (immutable) ────────────────────────────────────────
-  name  String
-  price Decimal @db.Decimal(15, 2)
-
-  orderItem OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
-  modifier  ProductModifier? @relation(fields: [modifierId], references: [id], onDelete: SetNull)
+  name        String
+  price       Decimal          @db.Decimal(15, 2)
+  orderItem   OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifier    ProductModifier? @relation(fields: [modifierId], references: [id], onDelete: SetNull)
 
   @@index([orderItemId])
   @@map("order_item_modifiers")
@@ -907,6 +907,8 @@ model Customer {
   outlet              Outlet               @relation(fields: [outletId], references: [id])
   orders              Order[]
   loyaltyTransactions LoyaltyTransaction[]
+  vouchers            Voucher[]
+  voucherRedemptions  VoucherRedemption[]
 
   @@unique([phone, outletId])
   @@unique([email, outletId])
@@ -990,4 +992,115 @@ model LoyaltyTransaction {
   @@index([createdAt])
   @@index([expiresAt])
   @@map("loyalty_transactions")
+}
+
+// ─── Enum Voucher ──────────────────────────────────────────────────────
+
+enum VoucherType {
+  PERCENTAGE /// Potongan persentase (0–100)
+  FIXED_AMOUNT /// Potongan nominal Rp
+}
+
+enum VoucherScope {
+  PER_BILL /// Berlaku untuk seluruh bill
+  PER_ITEM /// Berlaku untuk produk tertentu
+}
+
+// ─── Voucher ──────────────────────────────────────────────────────────────────
+
+/// Voucher & promo: mendukung kode unik, auto-apply, usage limit, dan targeting customer.
+/// Berbeda dari Discount (permanent store-wide): Voucher punya tracking redemption per customer.
+model Voucher {
+  id          String  @id @default(cuid())
+  outletId    String
+  name        String
+  /// Kode promo — null jika autoApply=true (tidak butuh kode)
+  code        String?
+  description String?
+
+  type  VoucherType
+  scope VoucherScope
+
+  /// Nilai persen (0–100) atau nominal Rp, tergantung type
+  value       Decimal  @db.Decimal(10, 2)
+  minPurchase Decimal? @db.Decimal(15, 2)
+  /// Cap diskon maksimal (terutama untuk PERCENTAGE)
+  maxDiscount Decimal? @db.Decimal(15, 2)
+
+  // ── Usage limits ────────────────────────────────────────────────────────────
+  /// Batas total penggunaan — null = tidak terbatas
+  usageLimit            Int?
+  /// Batas per customer — null = tidak terbatas per customer
+  usageLimitPerCustomer Int?
+  /// Counter penggunaan saat ini (diupdate atomic via increment/decrement)
+  usageCount            Int  @default(0)
+
+  // ── Auto-apply ──────────────────────────────────────────────────────────────
+  /// true = diterapkan otomatis tanpa kode jika syarat terpenuhi
+  autoApply Boolean @default(false)
+  /// Urutan prioritas auto-apply — lebih tinggi = diproses lebih dulu
+  priority  Int     @default(0)
+
+  // ── Targeting ───────────────────────────────────────────────────────────────
+  /// Jika diisi, hanya customer ini yang bisa menggunakan voucher
+  customerId String?
+
+  isActive  Boolean   @default(true)
+  startAt   DateTime?
+  endAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  outlet      Outlet              @relation(fields: [outletId], references: [id])
+  customer    Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  products    VoucherProduct[]
+  redemptions VoucherRedemption[]
+  carts       Cart[]
+  orders      Order[]
+
+  @@unique([code, outletId])
+  @@index([outletId, isActive])
+  @@index([outletId, autoApply, isActive])
+  @@index([code])
+  @@index([customerId])
+  @@map("vouchers")
+}
+
+/// Junction: produk yang berlaku untuk voucher PER_ITEM
+model VoucherProduct {
+  voucherId String
+  productId String
+  voucher   Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([voucherId, productId])
+  @@index([voucherId])
+  @@index([productId])
+  @@map("voucher_products")
+}
+
+/// Log penggunaan voucher — immutable setelah dibuat.
+/// Satu baris per order yang menggunakan voucher.
+model VoucherRedemption {
+  id             String    @id @default(cuid())
+  voucherId      String
+  outletId       String
+  /// null = guest (tidak tercatat sebagai customer member)
+  customerId     String?
+  /// Order terkait — null jika redemption dibuat sebelum order (rare)
+  orderId        String?
+  /// Nominal diskon yang benar-benar diberikan (bisa < value karena maxDiscount/cap)
+  discountAmount Decimal   @db.Decimal(15, 2)
+  redeemedAt     DateTime  @default(now())
+  voucher        Voucher   @relation(fields: [voucherId], references: [id])
+  customer       Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  outlet         Outlet    @relation(fields: [outletId], references: [id])
+
+  @@index([voucherId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([outletId])
+  @@index([redeemedAt])
+  @@map("voucher_redemptions")
 }

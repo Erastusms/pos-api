@@ -1621,6 +1621,324 @@ async function main() {
     console.info('✅ Sample orders linked ke customers')
   }
 
+  {
+    // Ambil product IDs dari seed yang sudah ada untuk PER_ITEM vouchers
+    const kopiProduct = await prisma.product.findFirst({
+      where: { sku: 'MNM-001', outletId: outlet.id },
+      select: { id: true },
+    })
+    const rotiProduct = await prisma.product.findFirst({
+      where: { sku: 'MKN-003', outletId: outlet.id },
+      select: { id: true },
+    })
+
+    // Tanggal bantu
+    const now = new Date()
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate())
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+    const yesterday = new Date(now.getTime() - 86400000)
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    const vouchers = [
+      // ── 1. WELCOME10: Welcome discount 10% untuk member baru ──────────────
+      {
+        id: 'seed-vch-001',
+        name: 'Welcome Discount 10%',
+        code: 'WELCOME10',
+        description: 'Diskon 10% untuk pembelian pertama member baru. Berlaku sekali per customer.',
+        type: 'PERCENTAGE' as const,
+        scope: 'PER_BILL' as const,
+        value: 10,
+        minPurchase: 50000,
+        maxDiscount: 25000,
+        usageLimit: null, // total tidak terbatas
+        usageLimitPerCustomer: 1, // hanya sekali per customer
+        autoApply: false,
+        priority: 0,
+        isActive: true,
+        startAt: startOfMonth,
+        endAt: nextMonth,
+        productIds: [] as string[],
+      },
+
+      // ── 2. FLAT20K: Potongan langsung Rp 20.000 ───────────────────────────
+      {
+        id: 'seed-vch-002',
+        name: 'Hemat Rp 20.000',
+        code: 'FLAT20K',
+        description: 'Potongan langsung Rp 20.000 untuk pembelian di atas Rp 100.000.',
+        type: 'FIXED_AMOUNT' as const,
+        scope: 'PER_BILL' as const,
+        value: 20000,
+        minPurchase: 100000,
+        maxDiscount: null,
+        usageLimit: 500, // max 500 kali total
+        usageLimitPerCustomer: null,
+        autoApply: false,
+        priority: 0,
+        isActive: true,
+        startAt: null,
+        endAt: null,
+        productIds: [] as string[],
+      },
+
+      // ── 3. HAPPYHOUR: Auto-apply 15% saat spend >= Rp 75.000 ──────────────
+      {
+        id: 'seed-vch-003',
+        name: 'Happy Hour 15%',
+        code: null, // auto-apply, tidak butuh kode
+        description:
+          'Diskon 15% otomatis jika total belanja mencapai Rp 75.000. Berlaku hari ini saja.',
+        type: 'PERCENTAGE' as const,
+        scope: 'PER_BILL' as const,
+        value: 15,
+        minPurchase: 75000,
+        maxDiscount: 30000,
+        usageLimit: null,
+        usageLimitPerCustomer: null,
+        autoApply: true, // ← auto-apply tanpa kode
+        priority: 10, // prioritas lebih tinggi dari default
+        isActive: true,
+        startAt: startOfMonth,
+        endAt: nextMonth,
+        productIds: [] as string[],
+      },
+
+      // ── 4. KOPI15: Diskon 15% khusus produk kopi (PER_ITEM) ───────────────
+      {
+        id: 'seed-vch-004',
+        name: 'Diskon Kopi 15%',
+        code: 'KOPI15',
+        description: 'Diskon 15% untuk produk Es Kopi Susu dan Americano.',
+        type: 'PERCENTAGE' as const,
+        scope: 'PER_ITEM' as const,
+        value: 15,
+        minPurchase: null,
+        maxDiscount: 20000,
+        usageLimit: 200,
+        usageLimitPerCustomer: 3,
+        autoApply: false,
+        priority: 0,
+        isActive: true,
+        startAt: null,
+        endAt: nextMonth,
+        productIds: [kopiProduct?.id].filter(Boolean) as string[],
+      },
+
+      // ── 5. Voucher spesifik untuk Budi Hartono (seed-cust-003) ─────────────
+      {
+        id: 'seed-vch-005',
+        name: 'Voucher Spesial Budi',
+        code: 'BUDI500',
+        description: 'Voucher eksklusif Rp 5.000 untuk Budi Hartono. Sekali pakai.',
+        type: 'FIXED_AMOUNT' as const,
+        scope: 'PER_BILL' as const,
+        value: 5000,
+        minPurchase: null,
+        maxDiscount: null,
+        usageLimit: 1,
+        usageLimitPerCustomer: 1,
+        autoApply: false,
+        priority: 0,
+        customerId: 'seed-cust-003', // khusus Budi
+        isActive: true,
+        startAt: null,
+        endAt: nextMonth,
+        productIds: [] as string[],
+      },
+
+      // ── 6. ROTIBAKAR: Diskon Rp 3.000 per item Roti Bakar ─────────────────
+      {
+        id: 'seed-vch-006',
+        name: 'Promo Roti Bakar -3K',
+        code: 'ROTIBAKAR',
+        description: 'Potongan Rp 3.000 per item Roti Bakar dalam satu transaksi.',
+        type: 'FIXED_AMOUNT' as const,
+        scope: 'PER_ITEM' as const,
+        value: 3000,
+        minPurchase: null,
+        maxDiscount: null,
+        usageLimit: null,
+        usageLimitPerCustomer: null,
+        autoApply: false,
+        priority: 0,
+        isActive: true,
+        startAt: null,
+        endAt: null,
+        productIds: [rotiProduct?.id].filter(Boolean) as string[],
+      },
+
+      // ── 7. Auto-apply Rp 10.000 untuk spend >= Rp 150.000 ─────────────────
+      {
+        id: 'seed-vch-007',
+        name: 'Cashback Rp 10.000',
+        code: null,
+        description: 'Hemat otomatis Rp 10.000 jika belanja minimal Rp 150.000.',
+        type: 'FIXED_AMOUNT' as const,
+        scope: 'PER_BILL' as const,
+        value: 10000,
+        minPurchase: 150000,
+        maxDiscount: null,
+        usageLimit: null,
+        usageLimitPerCustomer: null,
+        autoApply: true,
+        priority: 5, // prioritas lebih rendah dari HAPPYHOUR
+        isActive: true,
+        startAt: null,
+        endAt: null,
+        productIds: [] as string[],
+      },
+
+      // ── 8. EXPIRED: Voucher yang sudah kadaluarsa ─────────────────────────
+      {
+        id: 'seed-vch-008',
+        name: 'Flash Sale Kemarin',
+        code: 'FLASHSALE',
+        description: 'Voucher flash sale yang sudah berakhir.',
+        type: 'PERCENTAGE' as const,
+        scope: 'PER_BILL' as const,
+        value: 25,
+        minPurchase: null,
+        maxDiscount: 50000,
+        usageLimit: 100,
+        usageLimitPerCustomer: 1,
+        autoApply: false,
+        priority: 0,
+        isActive: false, // tidak aktif
+        startAt: lastMonth,
+        endAt: yesterday, // sudah expired
+        productIds: [] as string[],
+      },
+
+      // ── 9. LIMIT1: Voucher yang usage limit-nya hampir habis ──────────────
+      {
+        id: 'seed-vch-009',
+        name: 'Limited Promo 20%',
+        code: 'LIMITED20',
+        description: 'Voucher terbatas! Tersisa beberapa penggunaan.',
+        type: 'PERCENTAGE' as const,
+        scope: 'PER_BILL' as const,
+        value: 20,
+        minPurchase: 80000,
+        maxDiscount: 40000,
+        usageLimit: 5,
+        usageLimitPerCustomer: 1,
+        usageCount: 4, // sudah 4 dari 5 dipakai
+        autoApply: false,
+        priority: 0,
+        isActive: true,
+        startAt: null,
+        endAt: nextMonth,
+        productIds: [] as string[],
+      },
+    ]
+
+    for (const vch of vouchers) {
+      const {
+        productIds,
+        usageCount = 0,
+        customerId,
+        startAt,
+        endAt,
+        ...rest
+      } = vch as typeof vch & {
+        usageCount?: number
+        customerId?: string
+        startAt?: Date | null
+        endAt?: Date | null
+      }
+
+      await prisma.voucher.upsert({
+        where: { id: vch.id },
+        update: {},
+        create: {
+          ...rest,
+          usageCount,
+          ...(customerId ? { customerId } : {}),
+          ...(startAt ? { startAt } : {}),
+          ...(endAt ? { endAt } : {}),
+          outletId: outlet.id,
+          ...(productIds.length
+            ? { products: { create: productIds.map((pid) => ({ productId: pid })) } }
+            : {}),
+        },
+      })
+    }
+
+    console.info(`✅ Vouchers seeded: ${vouchers.length} voucher`)
+    console.info('   Breakdown:')
+    console.info('     WELCOME10  — 10% PER_BILL, limit 1x/customer, periode bulanan')
+    console.info('     FLAT20K    — -Rp20k PER_BILL, min Rp100k, max 500 penggunaan')
+    console.info('     (auto)     — 15% PER_BILL auto-apply, min Rp75k, priority 10')
+    console.info('     KOPI15     — 15% PER_ITEM khusus kopi, limit 3x/customer')
+    console.info('     BUDI500    — -Rp5k khusus Budi Hartono, sekali pakai')
+    console.info('     ROTIBAKAR  — -Rp3k PER_ITEM per roti bakar')
+    console.info('     (auto)     — -Rp10k PER_BILL auto-apply, min Rp150k, priority 5')
+    console.info('     FLASHSALE  — expired/inactive (untuk testing)')
+    console.info('     LIMITED20  — 20% PER_BILL, sisa 1 penggunaan dari 5')
+  }
+
+  // ── Phase 4.1: Sample Voucher Redemptions ─────────────────────────────────
+  {
+    // Andi Wijaya sudah pakai WELCOME10 di order-001
+    await prisma.voucherRedemption.upsert({
+      where: { id: 'seed-vrd-001' },
+      update: {},
+      create: {
+        id: 'seed-vrd-001',
+        voucherId: 'seed-vch-001',
+        outletId: outlet.id,
+        customerId: 'seed-cust-001',
+        orderId: 'seed-order-001',
+        discountAmount: 7800, // 10% dari 78000
+        redeemedAt: new Date('2026-01-01T10:00:00.000Z'),
+      },
+    })
+    // Update usageCount WELCOME10 jadi 1
+    await prisma.voucher.update({
+      where: { id: 'seed-vch-001' },
+      data: { usageCount: 1 },
+    })
+
+    // Sari Dewi pakai FLAT20K di order-004
+    await prisma.voucherRedemption.upsert({
+      where: { id: 'seed-vrd-002' },
+      update: {},
+      create: {
+        id: 'seed-vrd-002',
+        voucherId: 'seed-vch-002',
+        outletId: outlet.id,
+        customerId: 'seed-cust-002',
+        orderId: 'seed-order-004',
+        discountAmount: 20000,
+        redeemedAt: new Date('2026-01-03T02:00:00.000Z'),
+      },
+    })
+    // Update usageCount FLAT20K
+    await prisma.voucher.update({
+      where: { id: 'seed-vch-002' },
+      data: { usageCount: 1 },
+    })
+
+    // Link order-001 ke voucher WELCOME10 (update snapshot di order)
+    await prisma.order.updateMany({
+      where: { id: 'seed-order-001' },
+      data: {
+        voucherId: 'seed-vch-001',
+        voucherCode: 'WELCOME10',
+        voucherName: 'Welcome Discount 10%',
+        voucherType: 'PERCENTAGE',
+        voucherScope: 'PER_BILL',
+        voucherValue: 10,
+        voucherDiscountAmount: 7800,
+      },
+    })
+
+    console.info('✅ Voucher Redemptions seeded: 2 redemption')
+    console.info('   WELCOME10 dipakai Andi Wijaya di order-001 (-Rp 7.800)')
+    console.info('   FLAT20K   dipakai Sari Dewi di order-004 (-Rp 20.000)')
+  }
+
   console.info('\n🎉 Seed completed!\n')
   console.info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
   console.info('  Login:')

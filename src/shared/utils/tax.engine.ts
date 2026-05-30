@@ -16,25 +16,25 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type TaxSettings = {
-  taxRate:       number  // persen, e.g. 11   (bukan 0.11)
-  serviceCharge: number  // persen, e.g. 5    (bukan 0.05)
-  rounding:      string  // 'NONE' | 'UP' | 'DOWN' | 'NEAREST'
-  roundingValue: number  // e.g. 100, 500, 1000
+  taxRate: number // persen, e.g. 11   (bukan 0.11)
+  serviceCharge: number // persen, e.g. 5    (bukan 0.05)
+  rounding: string // 'NONE' | 'UP' | 'DOWN' | 'NEAREST'
+  roundingValue: number // e.g. 100, 500, 1000
 }
 
 /** Tipe yang kompatibel dengan nilai Prisma Decimal (unknown) maupun angka biasa */
 export type RawTaxSettings = {
-  taxRate:       unknown
+  taxRate: unknown
   serviceCharge: unknown
-  rounding:      string
+  rounding: string
   roundingValue: number
 }
 
 export type TaxResult = {
   serviceChargeAmount: number
-  taxAmount:           number
-  roundingAmount:      number
-  total:               number
+  taxAmount: number
+  roundingAmount: number
+  total: number
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -51,10 +51,14 @@ export function round2(n: number): number {
 export function applyRounding(amount: number, mode: string, value: number): number {
   if (!value || mode === 'NONE') return amount
   switch (mode) {
-    case 'UP':      return Math.ceil(amount / value) * value
-    case 'DOWN':    return Math.floor(amount / value) * value
-    case 'NEAREST': return Math.round(amount / value) * value
-    default:        return amount
+    case 'UP':
+      return Math.ceil(amount / value) * value
+    case 'DOWN':
+      return Math.floor(amount / value) * value
+    case 'NEAREST':
+      return Math.round(amount / value) * value
+    default:
+      return amount
   }
 }
 
@@ -62,9 +66,9 @@ export function applyRounding(amount: number, mode: string, value: number): numb
 export function normalizeTaxSettings(raw: RawTaxSettings | null): TaxSettings | null {
   if (!raw) return null
   return {
-    taxRate:       Number(raw.taxRate),
+    taxRate: Number(raw.taxRate),
     serviceCharge: Number(raw.serviceCharge),
-    rounding:      raw.rounding,
+    rounding: raw.rounding,
     roundingValue: raw.roundingValue,
   }
 }
@@ -77,17 +81,14 @@ export function normalizeTaxSettings(raw: RawTaxSettings | null): TaxSettings | 
  * @param discountedSubtotal - subtotal setelah diskon diterapkan
  * @param settings           - pengaturan pajak outlet (nullable → semua 0)
  */
-export function computeTax(
-  discountedSubtotal: number,
-  settings: TaxSettings | null,
-): TaxResult {
-  const scRate  = settings ? settings.serviceCharge / 100 : 0
+export function computeTax(discountedSubtotal: number, settings: TaxSettings | null): TaxResult {
+  const scRate = settings ? settings.serviceCharge / 100 : 0
   const taxRate = settings ? settings.taxRate / 100 : 0
 
   const serviceChargeAmount = round2(discountedSubtotal * scRate)
-  const taxableAmount       = discountedSubtotal + serviceChargeAmount
-  const taxAmount           = round2(taxableAmount * taxRate)
-  const rawTotal            = taxableAmount + taxAmount
+  const taxableAmount = discountedSubtotal + serviceChargeAmount
+  const taxAmount = round2(taxableAmount * taxRate)
+  const rawTotal = taxableAmount + taxAmount
 
   let roundedTotal = rawTotal
   if (settings && settings.roundingValue > 0) {
@@ -95,7 +96,7 @@ export function computeTax(
   }
 
   const roundingAmount = round2(roundedTotal - rawTotal)
-  const total          = round2(roundedTotal)
+  const total = round2(roundedTotal)
 
   return { serviceChargeAmount, taxAmount, roundingAmount, total }
 }

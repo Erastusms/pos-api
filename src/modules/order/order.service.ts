@@ -7,6 +7,7 @@ import { NotFoundError, BadRequestError, ConflictError } from '../../shared/erro
 import type { RawTaxSettings } from '../../shared/utils/tax.engine'
 import type { DiscountDef } from '../../shared/utils/discount.engine'
 import { customerService } from '../customer/customer.service'
+import { voucherService } from '../voucher/voucher.service'
 
 // ─── Role IDs yang boleh void order PAID ──────────────────────────────────────
 // 1=Super Admin, 2=Owner, 3=Manager
@@ -278,15 +279,60 @@ export const orderService = {
       throw new BadRequestError('Cart tidak memiliki item', 'CART_EMPTY')
     }
 
-    // ── 3. Hitung summary (discount + tax) ──────────────────────────────────
-    const [settings, discountDef] = await Promise.all([
+    // ── 3. Resolve discount + voucher + hitung summary ─────────────────────
+    const [settings, discountDef, voucherRow] = await Promise.all([
       getOutletSettings(outletId),
       getDiscountDef(cart.discountId),
+      cart.voucherId
+        ? prisma.voucher.findFirst({
+            where: { id: cart.voucherId, deletedAt: null },
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              type: true,
+              scope: true,
+              value: true,
+              minPurchase: true,
+              maxDiscount: true,
+              usageLimit: true,
+              usageLimitPerCustomer: true,
+              usageCount: true,
+              autoApply: true,
+              isActive: true,
+              startAt: true,
+              endAt: true,
+              products: { select: { productId: true } },
+            },
+          })
+        : null,
     ])
+
+    // Konversi ke VoucherDef (reuse toVoucherDef pattern dari voucher.service)
+    const voucherDef = voucherRow
+      ? {
+          id: voucherRow.id,
+          name: voucherRow.name,
+          code: voucherRow.code,
+          type: voucherRow.type as 'PERCENTAGE' | 'FIXED_AMOUNT',
+          scope: voucherRow.scope as 'PER_BILL' | 'PER_ITEM',
+          value: Number(voucherRow.value),
+          minPurchase: voucherRow.minPurchase ? Number(voucherRow.minPurchase) : null,
+          maxDiscount: voucherRow.maxDiscount ? Number(voucherRow.maxDiscount) : null,
+          usageLimit: voucherRow.usageLimit,
+          usageLimitPerCustomer: voucherRow.usageLimitPerCustomer,
+          usageCount: voucherRow.usageCount,
+          autoApply: voucherRow.autoApply,
+          isActive: voucherRow.isActive,
+          startAt: voucherRow.startAt,
+          endAt: voucherRow.endAt,
+          productIds: voucherRow.products.map((p: { productId: string }) => p.productId),
+        }
+      : null
 
     // Adaptasi CartItemRow type agar kompatibel dengan computeCartSummary
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const summary = computeCartSummary(cart.items as any, settings, discountDef)
+    const summary = computeCartSummary(cart.items as any, settings, discountDef, voucherDef)
 
     // ── 4. Generate order number ─────────────────────────────────────────────
     const orderNumber = await generateOrderNumber(outletId)
@@ -326,7 +372,7 @@ export const orderService = {
           serviceChargeAmount: summary.serviceChargeAmount,
           taxAmount: summary.taxAmount,
           roundingAmount: summary.roundingAmount,
-          total: summary.total,
+          total: summary.total - (voucherCheckout?.discountAmount ?? 0),
 
           // Discount snapshot
           discountName: discountDef?.name ?? null,
@@ -334,6 +380,15 @@ export const orderService = {
           discountType: discountDef?.type ?? null,
           discountScope: discountDef?.scope ?? null,
           discountValue: discountDef?.value ?? null,
+
+          // Voucher snapshot
+          voucherId: voucherRow?.id ?? null,
+          voucherCode: voucherRow?.code ?? null,
+          voucherName: voucherRow?.name ?? null,
+          voucherType: voucherRow?.type ?? null,
+          voucherScope: voucherRow?.scope ?? null,
+          voucherValue: voucherRow ? Number(voucherRow.value) : null,
+          voucherDiscountAmount: voucherCheckout?.discountAmount ?? 0,
 
           // Items
           items: {
@@ -378,6 +433,22 @@ export const orderService = {
           orderNumber: true,
           items: { select: { productId: true, quantity: true, unitPrice: true } },
         },
+      })
+
+      // ── 5b-extra: Process voucher (increment + redemption) ─────────────
+      // PATCH: voucherDiscountAmount dikirim sebagai bagian dari order create
+      const voucherCheckout = await voucherService.processCheckout({
+        voucherId: cart.voucherId,
+        outletId,
+        customerId: cart.customerId ?? null, // jika cart punya customerId
+        subtotal: summary.subtotal,
+        lineItems: summary.items.map((i) => ({
+          productId: i.productId,
+          lineTotal: i.lineTotal,
+          quantity: Number(i.quantity),
+        })),
+        orderId: newOrder.id,
+        tx,
       })
 
       // ── 5c. Deduct inventory untuk setiap item ────────────────────────────
@@ -473,6 +544,11 @@ export const orderService = {
           userId,
           tx,
         )
+      }
+
+      // ── PATCH: Kembalikan usageCount voucher ─────────────────────────────
+      if (current.voucherId) {
+        await voucherService.processVoid(current.voucherId, tx)
       }
 
       // ── PATCH: Refund poin jika ada loyalty earn untuk order ini ──────────

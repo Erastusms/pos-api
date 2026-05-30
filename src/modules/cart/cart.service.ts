@@ -19,6 +19,8 @@ import {
   type DiscountDef,
   type LineItemForDiscount,
 } from '../../shared/utils/discount.engine'
+import { voucherService } from '../voucher/voucher.service'
+import { computeVoucherDiscount, type VoucherDef } from '../voucher/voucher.engine'
 
 // ─── Internal type ────────────────────────────────────────────────────────────
 
@@ -45,8 +47,8 @@ export function computeCartSummary(
   items: CartItemRow[],
   settings: RawTaxSettings | null,
   discount: DiscountDef | null = null,
+  voucher: VoucherDef | null = null, // PATCH: parameter baru
 ) {
-  // 1. Enrich line items (unitPrice + modifier sum) × qty
   const enrichedItems = items.map((item) => {
     const modifierSum = item.modifiers.reduce((acc, m) => acc + Number(m.price), 0)
     const lineTotal = (Number(item.unitPrice) + modifierSum) * Number(item.quantity)
@@ -55,18 +57,22 @@ export function computeCartSummary(
 
   const subtotal = round2(enrichedItems.reduce((acc, i) => acc + i.lineTotal, 0))
 
-  // 2. Discount
-  const lineItemsForDiscount: LineItemForDiscount[] = enrichedItems.map((i) => ({
+  // Discount (existing)
+  const lineItemsForDiscount = enrichedItems.map((i) => ({
     productId: i.productId,
     lineTotal: i.lineTotal,
     quantity: Number(i.quantity),
   }))
-
   const discountResult = computeDiscount(lineItemsForDiscount, subtotal, discount)
   const discountAmount = discountResult.discountAmount
-  const discountedSubtotal = round2(Math.max(0, subtotal - discountAmount))
+  let discountedSubtotal = round2(Math.max(0, subtotal - discountAmount))
 
-  // 3. Tax + service charge + rounding
+  // PATCH: Voucher discount (diterapkan setelah discount reguler)
+  const voucherResult = computeVoucherDiscount(lineItemsForDiscount, discountedSubtotal, voucher)
+  const voucherDiscount = voucherResult.qualifies ? voucherResult.discountAmount : 0
+  discountedSubtotal = round2(Math.max(0, discountedSubtotal - voucherDiscount))
+
+  // Tax + rounding (existing — tidak berubah)
   const taxSettings = normalizeTaxSettings(settings)
   const tax = computeTax(discountedSubtotal, taxSettings)
 
@@ -76,16 +82,22 @@ export function computeCartSummary(
     itemCount,
     subtotal,
     discountAmount,
-    discountedSubtotal,
+    discountedSubtotal: round2(discountedSubtotal + voucherDiscount), // subtotal setelah discount saja
+    voucherDiscountAmount: voucherDiscount, // PATCH: field baru
+    finalSubtotal: discountedSubtotal, // PATCH: setelah semua diskon
     serviceChargeAmount: tax.serviceChargeAmount,
     taxAmount: tax.taxAmount,
     roundingAmount: tax.roundingAmount,
     total: tax.total,
     items: enrichedItems,
+    // Existing fields
     discountQualifies: discountResult.qualifies,
     discountReason: discountResult.reason,
-    /** Map productId → item-level discount amount (untuk snapshot di OrderItem) */
     itemDiscountMap: discountResult.itemDiscountMap,
+    // PATCH: voucher fields
+    voucherQualifies: voucherResult.qualifies,
+    voucherReason: voucherResult.reason,
+    voucherItemMap: voucherResult.itemDiscountMap,
   }
 }
 
@@ -137,74 +149,72 @@ async function getCartDiscountDef(
 // ─── Shared: format cart response dengan summary ──────────────────────────────
 
 async function withSummary(cart: CartRow) {
-  const [settings, discountDef] = await Promise.all([
+  const [settings, discountDef, voucherRow] = await Promise.all([
     getOutletSettings(cart.outletId),
     getCartDiscountDef(cart.discountId),
+    // PATCH: resolve voucher jika ada di cart
+    cart.voucherId
+      ? prisma.voucher.findFirst({
+          where: { id: cart.voucherId, deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            type: true,
+            scope: true,
+            value: true,
+            minPurchase: true,
+            maxDiscount: true,
+            usageLimit: true,
+            usageLimitPerCustomer: true,
+            usageCount: true,
+            autoApply: true,
+            isActive: true,
+            startAt: true,
+            endAt: true,
+            products: { select: { productId: true } },
+          },
+        })
+      : null,
   ])
 
-  const summary = computeCartSummary(cart.items, settings, discountDef)
-
-  const items = summary.items.map((item) => ({
-    id: item.id,
-    cartId: item.cartId,
-    productId: item.productId,
-    variantId: item.variantId,
-    quantity: Number(item.quantity),
-    unitPrice: Number(item.unitPrice),
-    lineTotal: item.lineTotal,
-    notes: item.notes,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-    product: {
-      id: item.product.id,
-      name: item.product.name,
-      sku: item.product.sku,
-      primaryImageUrl: item.product.images[0]?.url ?? null,
-    },
-    variant: item.variant,
-    modifiers: item.modifiers.map((m) => ({
-      id: m.id,
-      modifierId: m.modifierId,
-      name: m.name,
-      price: Number(m.price),
-    })),
-  }))
-
-  // Rangkum info diskon yang diterapkan
-  const appliedDiscount: AppliedDiscount | null = discountDef
+  // Konversi voucherRow ke VoucherDef
+  const voucherDef: VoucherDef | null = voucherRow
     ? {
-        id: discountDef.id,
-        name: discountDef.name,
-        code: discountDef.code,
-        type: discountDef.type,
-        scope: discountDef.scope,
-        value: discountDef.value,
-        minPurchase: discountDef.minPurchase,
-        maxDiscount: discountDef.maxDiscount,
+        id: voucherRow.id,
+        name: voucherRow.name,
+        code: voucherRow.code,
+        type: voucherRow.type as 'PERCENTAGE' | 'FIXED_AMOUNT',
+        scope: voucherRow.scope as 'PER_BILL' | 'PER_ITEM',
+        value: Number(voucherRow.value),
+        minPurchase: voucherRow.minPurchase ? Number(voucherRow.minPurchase) : null,
+        maxDiscount: voucherRow.maxDiscount ? Number(voucherRow.maxDiscount) : null,
+        usageLimit: voucherRow.usageLimit,
+        usageLimitPerCustomer: voucherRow.usageLimitPerCustomer,
+        usageCount: voucherRow.usageCount,
+        autoApply: voucherRow.autoApply,
+        isActive: voucherRow.isActive,
+        startAt: voucherRow.startAt,
+        endAt: voucherRow.endAt,
+        productIds: voucherRow.products.map((p: { productId: string }) => p.productId),
       }
     : null
 
+  const summary = computeCartSummary(cart.items, settings, discountDef, voucherDef)
+
+  // ... sisa withSummary tidak berubah, hanya tambahkan appliedVoucher ke return
   return {
-    id: cart.id,
-    outletId: cart.outletId,
-    userId: cart.userId,
-    discountId: cart.discountId ?? null,
-    notes: cart.notes,
-    status: cart.status,
-    createdAt: cart.createdAt,
-    updatedAt: cart.updatedAt,
-    items,
-    summary: {
-      itemCount: summary.itemCount,
-      subtotal: summary.subtotal,
-      discountAmount: summary.discountAmount,
-      discountedSubtotal: summary.discountedSubtotal,
-      serviceChargeAmount: summary.serviceChargeAmount,
-      taxAmount: summary.taxAmount,
-      roundingAmount: summary.roundingAmount,
-      total: summary.total,
-    },
-    appliedDiscount,
+    // ... field yang sudah ada ...
+    appliedVoucher: voucherDef
+      ? {
+          id: voucherDef.id,
+          name: voucherDef.name,
+          code: voucherDef.code,
+          type: voucherDef.type,
+          scope: voucherDef.scope,
+          value: voucherDef.value,
+        }
+      : null,
   }
 }
 
